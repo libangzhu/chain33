@@ -3,6 +3,7 @@ package protos
 import (
 	"io"
 	"io/ioutil"
+	"strings"
 	"time"
 
 	logging "github.com/ipfs/go-log"
@@ -13,6 +14,7 @@ import (
 	proto "github.com/gogo/protobuf/proto"
 	uuid "github.com/google/uuid"
 	net "github.com/libp2p/go-libp2p-net"
+	ipnet "net"
 )
 
 const (
@@ -28,6 +30,7 @@ type PeerInfoProtol struct {
 	done     chan struct{}
 	node     *next.Node                           // local host
 	requests map[string]*types.MessagePeerInfoReq // used to access request data from response handlers
+	TimeOutChan  interface{}
 }
 
 func init() {
@@ -43,6 +46,7 @@ func (p *PeerInfoProtol) New(node *next.Node, cli queue.Client, done chan struct
 	Server.node = node
 	Server.client = cli
 	Server.done = done
+	Server.TimeOutChan = next.RegisterMonitor(next.PeerInfo)
 	return Server
 
 }
@@ -125,6 +129,16 @@ Jump:
 	peerinfo.Name = p.node.Host.ID().Pretty()
 
 	peerinfo.Addr = p.node.Host.Addrs()[0].String()
+
+	for _, addr := range p.node.Host.Addrs() {
+		// 从地址格式 /ip4/127.0.0.1/tcp/8085 中截取ip
+		result := strings.Split(addr.String(),"/")
+		if len(result) > 3 {
+			if IsPublicIP(result[2]) {
+				peerinfo.Addr = result[2]
+			}
+		}
+	}
 	return &peerinfo
 }
 func (p *PeerInfoProtol) ManagePeerInfo() {
@@ -205,6 +219,7 @@ func (p *PeerInfoProtol) PeerInfo() {
 			return
 		}
 
+		next.RegisterMessage(next.PeerInfo,req.MessageData.Id,req.MessageData.Timestamp, next.PeerInfoTimeout)
 		// store ref request so response handler has access to it
 		p.requests[req.MessageData.Id] = req
 
@@ -245,4 +260,24 @@ func (p *PeerInfoProtol) DoProcess(msg *queue.Message) {
 	peers = append(peers, &peer)
 	msg.Reply(p.client.NewMessage("blockchain", types.EventPeerList, &types.PeerList{Peers: peers}))
 
+}
+
+func IsPublicIP(ip string) bool {
+	IP := ipnet.ParseIP(ip)
+	if IP.IsLoopback() || IP.IsLinkLocalMulticast() || IP.IsLinkLocalUnicast() {
+		return false
+	}
+	if ip4 := IP.To4(); ip4 != nil {
+		switch {
+		case ip4[0] == 10:
+			return false
+		case ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31:
+			return false
+		case ip4[0] == 192 && ip4[1] == 168:
+			return false
+		default:
+			return true
+		}
+	}
+	return false
 }

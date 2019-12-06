@@ -2,12 +2,16 @@ package p2pnext
 
 import (
 	"encoding/hex"
+	"path"
 	"sync"
-
+	"context"
 	"github.com/33cn/chain33/types"
 
 	"github.com/33cn/chain33/common/crypto"
 	"github.com/33cn/chain33/common/db"
+	peerstore "github.com/libp2p/go-libp2p-core/peerstore"
+	"github.com/libp2p/go-libp2p-peerstore/pstoreds"
+	"github.com/ipfs/go-ds-leveldb"
 )
 
 const (
@@ -22,6 +26,7 @@ type AddrBook struct {
 	privkey string
 	pubkey  string
 	bookDb  db.DB
+	Peerstore peerstore.Peerstore
 	Quit    chan struct{}
 }
 
@@ -40,6 +45,20 @@ func NewAddrBook(cfg *types.P2P) *AddrBook {
 
 func (a *AddrBook) loadDb() bool {
 	a.bookDb = db.NewDB("addrbook", a.cfg.Driver, a.cfg.DbPath, a.cfg.DbCache)
+	storePath := path.Join(a.cfg.DbPath,"peerstore" +".db")
+
+	store, err := leveldb.NewDatastore(storePath, nil)
+	if err != nil {
+		logger.Error("AddrBook","leveldb",err)
+		return false
+	}
+	option := pstoreds.DefaultOpts()
+	peerStore, err := pstoreds.NewPeerstore(context.Background(), store, option)
+	if err !=nil {
+		logger.Error("AddrBook","NewPeerstore",err)
+		return false
+	}
+	a.Peerstore = peerStore
 	privkey, err := a.bookDb.Get([]byte(privKeyTag))
 	if len(privkey) != 0 && err == nil {
 		pubkey, err := genPubkey(string(privkey))

@@ -3,10 +3,12 @@ package p2pnext
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"time"
 
 	"github.com/33cn/chain33/client"
-
+	"github.com/libp2p/go-libp2p-core/peerstore"
 	"github.com/33cn/chain33/queue"
 	"github.com/33cn/chain33/types"
 	"github.com/ipfs/go-log"
@@ -14,7 +16,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/metrics"
 	host "github.com/libp2p/go-libp2p-host"
-	multiaddr "github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multiaddr"
 )
 
 var logger = log.Logger("Testp2p")
@@ -38,7 +40,8 @@ func New(cfg *types.Chain33Config) *P2p {
 	}
 	var addrlist []multiaddr.Multiaddr
 	addrlist = append(addrlist, m)
-	keystr, _ := NewAddrBook(cfg.GetModuleConfig().P2P).GetPrivPubKey()
+	addrBook :=  NewAddrBook(cfg.GetModuleConfig().P2P)
+	keystr, _ := addrBook.GetPrivPubKey()
 
 	//key string convert to crpyto.Privkey
 	key, _ := hex.DecodeString(keystr)
@@ -46,15 +49,11 @@ func New(cfg *types.Chain33Config) *P2p {
 	if err != nil {
 		panic(err)
 	}
+	host, err :=  MakeBasicHost(context.Background(),m,priv,addrBook.Peerstore)
+	if err != nil {
+		panic(err)
+	}
 
-	bandwidthTracker := metrics.NewBandwidthCounter()
-	host, err := libp2p.New(context.Background(),
-		libp2p.ListenAddrs(addrlist...),
-		libp2p.Identity(priv),
-		libp2p.EnableAutoRelay(),
-		libp2p.BandwidthReporter(bandwidthTracker),
-		libp2p.NATPortMap(),
-	)
 	p2p := &P2p{Host: host}
 	p2p.streamMang = NewStreamManage(host)
 	p2p.Processer = make(map[string]Driver)
@@ -117,6 +116,7 @@ func (p *P2p) SetQueueClient(cli queue.Client) {
 		p.client = cli
 	}
 	p.Node = NewNode(p)
+	p.initMonitor()
 	p.initProcesser()
 	go p.managePeers()
 	go p.subP2PMsg()
@@ -143,4 +143,35 @@ func (p *P2p) subP2PMsg() {
 
 		}
 	}
+}
+
+func (p *P2p)initMonitor()  {
+	monitor = NewMonitor(p.Node)
+	go monitor.StartMonitor()
+}
+
+func MakeBasicHost(context context.Context, ma multiaddr.Multiaddr, priv crypto.PrivKey, pStore peerstore.Peerstore) (host.Host, error) {
+
+	bandwidthTracker := metrics.NewBandwidthCounter()
+	opts := []libp2p.Option{
+		libp2p.ListenAddrs(ma),
+		libp2p.Identity(priv),
+		libp2p.EnableAutoRelay(),
+		libp2p.BandwidthReporter(bandwidthTracker),
+		libp2p.NATPortMap(),
+		libp2p.Peerstore(pStore),
+	}
+	basicHost, err := libp2p.New(context, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	info := &peer.AddrInfo{
+		ID:    basicHost.ID(),
+		Addrs: basicHost.Addrs(),
+	}
+	addrs, err := peer.AddrInfoToP2pAddrs(info)
+	fmt.Println("host multiaddress:", addrs)
+	basicHost.Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
+	return basicHost, nil
 }

@@ -22,3 +22,7 @@ var ProcessName = []string{
 	BroadCastBlock,
 	NetInfo,
 }
+
+const (
+	PeerInfoTimeout = 10
+)

@@ -1,6 +1,7 @@
 package p2pnext
 
 import (
+	"github.com/33cn/chain33/common/pubsub"
 	"log"
 	"sync"
 	"time"
@@ -20,11 +21,13 @@ type Node struct {
 	PeersInfo sync.Map
 	Host      host.Host
 	*StreamMange
+	Pubsub     *pubsub.PubSub
 }
 
 func NewNode(p *P2p) *Node {
 	node := &Node{Host: p.Host}
 	node.StreamMange = p.streamMang
+	node.Pubsub = pubsub.NewPubSub(10200)
 	return node
 }
 
