@@ -5,9 +5,12 @@
 package rpc
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
+	"net/http"
 	"net/rpc"
+	"strings"
 	"time"
 
 	"github.com/33cn/chain33/client"
@@ -76,7 +79,27 @@ func (s *JSONRPCServer) Close() {
 		s.jrpc.cli.Close()
 	}
 }
+func checkBasicAuth(r *http.Request) bool {
+	if rpcCfg.JrpcUserName == "" && rpcCfg.JrpcUserPasswd == "" {
+		return true
+	}
 
+	s := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
+	if len(s) != 2 {
+		return false
+	}
+
+	b, err := base64.StdEncoding.DecodeString(s[1])
+	if err != nil {
+		return false
+	}
+
+	pair := strings.SplitN(string(b), ":", 2)
+	if len(pair) != 2 {
+		return false
+	}
+	return pair[0] == rpcCfg.JrpcUserName && pair[1] == rpcCfg.JrpcUserPasswd
+}
 func checkIPWhitelist(addr string) bool {
 	//回环网络直接允许
 	ip := net.ParseIP(addr)
