@@ -2,7 +2,7 @@ package dht
 
 import (
 	"context"
-
+	//log "github.com/33cn/chain33/common/log/log15"
 	p2pty "github.com/33cn/chain33/system/p2p/dht/types"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -17,6 +17,7 @@ func initInnerPeers(host host.Host, peersInfo []peer.AddrInfo, cfg *p2pty.P2PSub
 		if info == nil || info.ID == host.ID() {
 			continue
 		}
+		log.Info("seedinfo",info)
 		host.Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
 		err := host.Connect(context.Background(), *info)
 		if err != nil {

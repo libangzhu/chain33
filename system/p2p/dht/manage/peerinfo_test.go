@@ -3,6 +3,7 @@ package manage
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/33cn/chain33/queue"
 	"github.com/33cn/chain33/types"
@@ -15,7 +16,7 @@ func TestPeerInfoManager(t *testing.T) {
 	require.Nil(t, err)
 	q := queue.New("test")
 	go sub(q.Client())
-	mgr := NewPeerInfoManager(context.Background(), h1, q.Client())
+	mgr := NewPeerInfoManager(context.Background(), h1, q.Client(),time.Minute)
 	require.Nil(t, mgr.Fetch(h1.ID()))
 	require.Nil(t, mgr.FetchAll())
 	mgr.Refresh(&types.Peer{

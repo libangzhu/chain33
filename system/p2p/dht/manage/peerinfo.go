@@ -19,6 +19,7 @@ type PeerInfoManager struct {
 	client    queue.Client
 	host      host.Host
 	maxHeight int64
+	lifetime time.Duration
 }
 
 type peerStoreInfo struct {
@@ -27,12 +28,16 @@ type peerStoreInfo struct {
 }
 
 // NewPeerInfoManager new peer info manager
-func NewPeerInfoManager(ctx context.Context, host host.Host, cli queue.Client) *PeerInfoManager {
+func NewPeerInfoManager(ctx context.Context, host host.Host, cli queue.Client,lifetime time.Duration) *PeerInfoManager {
 	peerInfoManage := &PeerInfoManager{
 		ctx:    ctx,
 		client: cli,
 		host:   host,
 	}
+	if lifetime==0{
+		lifetime=time.Minute
+	}
+	peerInfoManage.lifetime=lifetime
 	go peerInfoManage.start()
 	return peerInfoManage
 }
@@ -60,7 +65,7 @@ func (p *PeerInfoManager) Fetch(pid peer.ID) *types.Peer {
 		return nil
 	}
 	if info, ok := v.(*peerStoreInfo); ok {
-		if time.Since(info.storeTime) > time.Minute {
+		if time.Since(info.storeTime) > p.lifetime {
 			p.peerInfo.Delete(key)
 			return nil
 		}
@@ -75,7 +80,7 @@ func (p *PeerInfoManager) FetchAll() []*types.Peer {
 	var self *types.Peer
 	p.peerInfo.Range(func(key, value interface{}) bool {
 		info := value.(*peerStoreInfo)
-		if time.Since(info.storeTime) > time.Minute {
+		if time.Since(info.storeTime) > p.lifetime {
 			p.peerInfo.Delete(key)
 			return true
 		}
@@ -126,7 +131,7 @@ func (p *PeerInfoManager) start() {
 func (p *PeerInfoManager) prune() {
 	p.peerInfo.Range(func(key interface{}, value interface{}) bool {
 		info := value.(*peerStoreInfo)
-		if time.Since(info.storeTime) > time.Minute {
+		if time.Since(info.storeTime) >p.lifetime {
 			p.peerInfo.Delete(key)
 			return true
 		}

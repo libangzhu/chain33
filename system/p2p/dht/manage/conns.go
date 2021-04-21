@@ -25,8 +25,8 @@ var (
 )
 
 const (
-	maxBounds    = 30 //最大连接数包含连接被连接
-	maxOutBounds = 15 //对外连接的最大节点数量
+	maxBounds    = 30000 //最大连接数包含连接被连接
+	maxOutBounds = 15000 //对外连接的最大节点数量
 )
 
 // ConnManager p2p connection manager

@@ -133,7 +133,7 @@ func initP2P(p *P2P) *P2P {
 	p.pubsub = ps
 	p.discovery = InitDhtDiscovery(p.ctx, p.host, p.addrBook.AddrsInfo(), p.chainCfg, p.subCfg)
 	p.connManager = manage.NewConnManager(p.ctx, p.host, p.discovery.RoutingTable(), bandwidthTracker, p.subCfg)
-	p.peerInfoManager = manage.NewPeerInfoManager(p.ctx, p.host, p.client)
+	p.peerInfoManager = manage.NewPeerInfoManager(p.ctx, p.host, p.client,time.Minute)
 	p.taskGroup = &sync.WaitGroup{}
 	p.db = newDB("", p.p2pCfg.Driver, p.subCfg.DHTDataPath, p.subCfg.DHTDataCache)
 	return p
@@ -245,6 +245,7 @@ func (p *P2P) buildHostOptions(priv crypto.PrivKey, bandwidthTracker metrics.Rep
 	options = append(options, libp2p.Ping(false))
 	return options
 }
+
 
 func (p *P2P) managePeers() {
 	go p.connManager.MonitorAllPeers()

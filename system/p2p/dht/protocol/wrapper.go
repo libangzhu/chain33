@@ -1,8 +1,10 @@
 package protocol
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
+	core "github.com/libp2p/go-libp2p-core"
 	"math/rand"
 	"runtime"
 	"time"
@@ -34,7 +36,34 @@ func ReadStream(data types.Message, stream network.Stream) error {
 	}
 	return nil
 }
+func ReadSscanStream(data types.Message,stream core.Stream)error{
+	stream.SetReadDeadline(time.Now().Add(time.Second*5))
+	decoder:=protobufCodec.Multicodec(nil).Decoder(bufio.NewReader(stream))
+	err:=decoder.Decode(data)
+	if err!=nil{
+		log.Error("ReadScanStream","err",err)
+		return err
+	}
+	return nil
+}
+func WriteScanStream(data types.Message,stream core.Stream)error{
+	stream.SetWriteDeadline(time.Now().Add(time.Second*5))
+	writer:=bufio.NewWriter(stream)
+	enc:=protobufCodec.Multicodec(nil).Encoder(writer)
+	err:=enc.Encode(data)
+	if err != nil {
+		log.Error("WriteStream", "pid", stream.Conn().RemotePeer().Pretty(), "protocolID", stream.Protocol(), "encode err", err)
+		return err
+	}
+	err=writer.Flush()
+	if err!=nil{
+		log.Error("flush","err",err)
+		return  err
+	}
+	return  nil
 
+
+}
 // WriteStream writes message to stream.
 func WriteStream(data types.Message, stream network.Stream) error {
 	enc := protobufCodec.Multicodec(nil).Encoder(stream)

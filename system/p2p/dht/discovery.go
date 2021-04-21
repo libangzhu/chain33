@@ -68,6 +68,10 @@ func (d *Discovery) Start() {
 	d.RoutingDiscovery = discovery.NewRoutingDiscovery(d.kademliaDHT)
 }
 
+
+func (d*Discovery)GetDiscovery()*discovery.RoutingDiscovery{
+	return d.RoutingDiscovery
+}
 //Close close the dht
 func (d *Discovery) Close() error {
 	if d.kademliaDHT != nil {
@@ -173,4 +177,8 @@ func (d *Discovery) Remove(pid peer.ID) {
 	}
 	d.kademliaDHT.RoutingTable().Remove(pid)
 
+}
+
+func (d *Discovery)GetDht() *dht.IpfsDHT{
+	return  d.kademliaDHT
 }
