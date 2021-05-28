@@ -65,9 +65,10 @@ func (r ReadParase) parseOnlineFileAddr(indata [][]byte) map[string]bool {
 	}
 	return addrs
 }
-func (r ReadParase) parseFileContentMap(indata [][]byte) (map[string]string, map[string][]string) {
+func (r ReadParase) parseOnServFileContentMap(indata [][]byte) (map[string]string, map[string]map[string]interface{}) {
 	var addrData = make(map[string]string)
-	var addrmap = make(map[string][]string)
+	//var addrmap = make(map[string][]string)
+	var addrmap=make(map[string]map[string]interface{})
 	for _, in := range indata {
 		fileContent := string(in)
 		st := strings.TrimSpace(string(fileContent))
@@ -75,6 +76,14 @@ func (r ReadParase) parseFileContentMap(indata [][]byte) (map[string]string, map
 		for _, linestr := range strs {
 			pidaddr := strings.Split(linestr, "@")
 			if len(pidaddr) >= 2 {
+				if *chainver != ""{
+					versions:=pidaddr[2]
+					appVer:=strings.Split(versions,"-")[0]
+					if appVer != *chainver{//airdrop this version
+						continue
+					}
+				}
+
 				//通过pid生成地址
 				pub, err := common.FromHex(pidaddr[0])
 				if err != nil {
@@ -91,6 +100,8 @@ func (r ReadParase) parseFileContentMap(indata [][]byte) (map[string]string, map
 					}
 
 				}
+
+
 				address := address.PubKeyToAddress(pub)
 				var ip string
 
@@ -104,11 +115,14 @@ func (r ReadParase) parseFileContentMap(indata [][]byte) (map[string]string, map
 				addrData[address.String()] = ip
 
 				if addrs, ok := addrmap[ip]; ok {
-					addrs = append(addrs, address.String())
+					//addrs = append(addrs, address.String())
+					addrs[address.String()]=true
 					addrmap[ip] = addrs
 				} else {
-					var addrs []string
-					addrs = append(addrs, address.String())
+					//var addrs []string
+					//addrs = append(addrs, address.String())
+					addrs:=make(map[string]interface{})
+					addrs[address.String()]=true
 					addrmap[ip] = addrs
 				}
 

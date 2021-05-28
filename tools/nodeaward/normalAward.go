@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	OnServiceCoins = 2500
-	OnlineCoins    = 300
+	OnServiceCoins = 1250
+	OnlineCoins    = 150
 )
 
 func normalAward(bestfilepath []string) {
@@ -28,7 +28,8 @@ func normalAward(bestfilepath []string) {
 	//onlineChans 所有全网节点
 	//onserviceChans 所有能对外提供服务的节点
 	var OnseviceMap map[string]string
-	var OnServiceIpMap map[string][]string
+	//var OnServiceIpMap map[string][]string
+	var OnServiceIpMap map[string]map[string]interface{}
 	var read ReadParase
 	var filebytes [][]byte
 	for filename := range onserviceChans {
@@ -36,7 +37,7 @@ func normalAward(bestfilepath []string) {
 		rbs := read.ReadFile(filename)
 		filebytes = append(filebytes, rbs)
 	}
-	OnseviceMap, OnServiceIpMap = read.parseFileContentMap(filebytes)
+	OnseviceMap, OnServiceIpMap = read.parseOnServFileContentMap(filebytes)
 	log.Info("normalAward", "onservieIpMap", len(OnServiceIpMap))
 	var onserviceCount int
 	var noserviceCount int

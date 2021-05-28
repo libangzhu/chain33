@@ -69,7 +69,6 @@ func NewScanner(client queue.Client) *NetScan {
 		log.Error("new p2p", "err", err)
 		panic(err)
 	}
-
 	dis := dht.InitDhtDiscovery(ctx, h, nil, cfg, mcfg)
 	peers := ConvertPeers(mcfg.Seeds)
 	log.Info("netscan", "hostId", h.ID(), "seeds", mcfg.Seeds)
@@ -102,9 +101,9 @@ func (n *NetScan) subMsg() {
 		for msg := range n.cli.Recv() {
 			switch msg.Ty {
 			case rpc.EventPeerLocaltionInfo:
-				ReflushLocalInfo(*gossipPath)
+				//ReflushLocalInfo(*gossipPath)
 				infos := GetpeerLocaltionInfo()
-				log.Info("subMsg","infos",len(infos))
+				log.Info("subMsg", "infos", len(infos))
 				msg.Reply(n.cli.NewMessage("rpc", rpc.EventPeerLocaltionInfo, &rpc.ConriesInfo{Countries: infos}))
 			}
 		}
@@ -199,7 +198,7 @@ func (n *NetScan) ScanNetPeerInfos() { //
 }
 
 func (n *NetScan) TicketWrite() {
-	ticker := time.NewTicker(time.Minute * 15)
+	ticker := time.NewTicker(time.Minute * 5)
 
 	for {
 		<-ticker.C
@@ -214,7 +213,10 @@ func (n *NetScan) TicketWrite() {
 		var standerHeight int64
 		for _, seed := range n.seeds {
 			peer := n.peerInfoManag.Fetch(peer.ID(seed))
-			standerHeight = peer.GetHeader().GetHeight()
+			seedHeight := peer.GetHeader().GetHeight()
+			if standerHeight < seedHeight {
+				standerHeight = seedHeight
+			}
 		}
 		pinfos := n.peerInfoManag.FetchAll()
 		for _, info := range pinfos {
@@ -228,10 +230,12 @@ func (n *NetScan) TicketWrite() {
 				versionM[info.Version] = make(map[string]int64)
 				versionM[info.Version][info.Name] = info.Header.Height
 			}
+			fmt.Println("peerHeight","height",info.Header.GetHeight(),"standerHeight",standerHeight)
 			if info.Header.Height+512 >= standerHeight { //512个以内，被认为是同步的
 				//增加版本号
 				serviceF.WriteString(fmt.Sprintf("%v@%v@%v\n", info.Name, fmt.Sprintf("%s:%d", info.Addr, info.Port), info.Version))
 			} else {
+
 				unsyncF.WriteString(fmt.Sprintf("%v@%v@diff:%d@%v\n", info.Name,
 					fmt.Sprintf("%s:%d", info.Addr, info.Port), standerHeight-info.Header.Height, info.Version))
 			}
@@ -249,18 +253,19 @@ func (n *NetScan) TicketWrite() {
 			var ip string
 			for _, addr := range pinfo.Addrs {
 				addrsplites := strings.Split(addr.String(), "/")
-				if len(addrsplites) > 3 {
+				if len(addrsplites) >= 3 {
+					//log.Info("isPublicIP","ippp-----------------------",addrsplites[2])
 					if isPublicIP(addrsplites[2]) {
 						ip = addrsplites[2]
+						break
 					}
-				} else {
-					continue
 				}
-
 			}
 			ipdata := n.CheckIp(ip)
-			if ipdata!=nil{
-				tempLocalInfo.Add(ipdata, pinfo.ID.String())
+			if ipdata != nil {
+				ipdata.City = "city"
+				ipdata.Region = "region"
+				tempLocalInfo.Add(ipdata, pinfo.ID.Pretty())
 			}
 
 			allNodeF.WriteString(fmt.Sprintf("%s@%v\n", pinfo.ID, ip))
@@ -276,8 +281,8 @@ func (n *NetScan) TicketWrite() {
 					var cityinfo string
 					pidNum += len(info.pids)
 					//pids = append(pids, info.pids...)
-					for pid:=range info.pids{
-						pids=append(pids,pid)
+					for pid := range info.pids {
+						pids = append(pids, pid)
 					}
 					if region == city {
 						city = ""
@@ -293,7 +298,11 @@ func (n *NetScan) TicketWrite() {
 			countryinfo += "\n" + country + "node num:" + fmt.Sprintf("%v", pidNum)
 		}
 		tempLocalInfo.mtx.Unlock()
-		locaInfo = tempLocalInfo
+		if ReflushLocalInfo(*gossipPath, tempLocalInfo) {
+			//log.Info("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+			locaInfo = tempLocalInfo
+		}
+
 		jbytes, _ := json.Marshal(countryData)
 		tempLocalInfo.Stat = true
 		localionsF.WriteString(countryinfo)

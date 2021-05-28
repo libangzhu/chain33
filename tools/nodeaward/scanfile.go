@@ -37,11 +37,8 @@ func ScanBestFiles(path string) string {
 		close(onserviceChans)
 		var OnseviceMap map[string]string
 		for filename := range onserviceChans {
-			//log.Info("ScanBestFiles", "filename", filename)
-
 			rbs := read.ReadFile(filename)
-
-			OnseviceMap, _ = read.parseFileContentMap([][]byte{rbs})
+			OnseviceMap, _ = read.parseOnServFileContentMap([][]byte{rbs})
 			if maxNum < len(OnseviceMap) {
 				maxNum = len(OnseviceMap)
 				//bestFile = filename

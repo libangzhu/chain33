@@ -55,9 +55,7 @@ func SendCoins(to string, amount int64) error {
 
 	v := &cty.CoinsAction_Transfer{&types.AssetsTransfer{Cointoken: "BTY", Amount: amount, Note: []byte("node award")}}
 	transfer := &cty.CoinsAction{Value: v, Ty: cty.CoinsActionTransfer}
-	//var nonce int64 = 10240000
 	tx := &types.Transaction{Execer: []byte("coins"), Payload: types.Encode(transfer), Fee: 1e5, To: addrto, Nonce: rand.New(rand.NewSource(time.Now().UnixNano())).Int63()}
-	//tx.SetExpire(time.Second * 120)
 	tx.Sign(types.SECP256K1, priv)
 
 	poststr := fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"Chain33.SendTransaction","params":[{"data":"%v"}]}`,

@@ -13,6 +13,7 @@ var (
 	awardT     = flag.Int("t", 22, "nodeaward time")
 	destpath   = flag.String("p", "", "scan file path")
 	gossippath = flag.String("gp", "", "scan file path")
+	chainver =flag.String("v","","chain33 version")
 )
 
 var waithChan chan bool
