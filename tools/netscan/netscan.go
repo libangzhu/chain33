@@ -29,6 +29,7 @@ var (
 	peerInfoProtoOld protocol.ID = "/chain33/peerinfoReq/1.0.0"
 	peerInfoProto                = "/chain33/peer-info/1.0.0"
 	cfgPath                      = flag.String("f", "scan.toml", "config file")
+	var standerHeight int64
 )
 
 type NetScan struct {
@@ -37,7 +38,7 @@ type NetScan struct {
 	peerInfoManag *manage.PeerInfoManager
 	cancel        context.CancelFunc
 	ctx           context.Context
-	seeds         []string
+	seeds         map[string]bool
 	cli           queue.Client
 }
 
@@ -72,9 +73,10 @@ func NewScanner(client queue.Client) *NetScan {
 	dis := dht.InitDhtDiscovery(ctx, h, nil, cfg, mcfg)
 	peers := ConvertPeers(mcfg.Seeds)
 	log.Info("netscan", "hostId", h.ID(), "seeds", mcfg.Seeds)
-	var seedpid []string
+	var seedpid =make(map[string]bool)
 	for pid := range peers {
-		seedpid = append(seedpid, pid)
+		seedpid[pid]=true
+		//seedpid = append(seedpid, pid)
 	}
 
 	return &NetScan{host: h,
@@ -210,14 +212,8 @@ func (n *NetScan) TicketWrite() {
 		allNodeF := Createfile("onlinepids")
 		localionsF := Createfile("localtions")
 		countryF := Createfile("countryinfos")
-		var standerHeight int64
-		for _, seed := range n.seeds {
-			peer := n.peerInfoManag.Fetch(peer.ID(seed))
-			seedHeight := peer.GetHeader().GetHeight()
-			if standerHeight < seedHeight {
-				standerHeight = seedHeight
-			}
-		}
+
+
 		pinfos := n.peerInfoManag.FetchAll()
 		for _, info := range pinfos {
 			if info.Version == "" {
@@ -401,10 +397,14 @@ ReConn:
 		return
 	}
 	peerinfo := resp.GetMessage()
+	if n.seeds[peerinfo.Name]{
+		standerHeight=peerinfo.Header.GetHeight()
+	}
 	n.peerInfoManag.Refresh(&types.Peer{Name: peerinfo.Name, Addr: peerinfo.Addr, Port: peerinfo.GetPort(), MempoolSize: peerinfo.GetMempoolSize(),
 		Header: peerinfo.GetHeader(), Version: peerinfo.GetVersion(), LocalDBVersion: peerinfo.GetLocalDBVersion(), StoreDBVersion: peerinfo.GetStoreDBVersion(),
 		Self: false,
 	})
+
 
 	//stream.Close()
 
