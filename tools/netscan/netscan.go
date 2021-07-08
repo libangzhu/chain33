@@ -29,7 +29,7 @@ var (
 	peerInfoProtoOld protocol.ID = "/chain33/peerinfoReq/1.0.0"
 	peerInfoProto                = "/chain33/peer-info/1.0.0"
 	cfgPath                      = flag.String("f", "scan.toml", "config file")
-	var standerHeight int64
+	standerHeight int64
 )
 
 type NetScan struct {
@@ -294,11 +294,13 @@ func (n *NetScan) TicketWrite() {
 			countryinfo += "\n" + country + "node num:" + fmt.Sprintf("%v", pidNum)
 		}
 		tempLocalInfo.mtx.Unlock()
+
 		if ReflushLocalInfo(*gossipPath, tempLocalInfo) {
 			//log.Info("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 			locaInfo = tempLocalInfo
 		}
 
+		locaInfo=tempLocalInfo
 		jbytes, _ := json.Marshal(countryData)
 		tempLocalInfo.Stat = true
 		localionsF.WriteString(countryinfo)
