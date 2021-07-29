@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/33cn/chain33/common/version"
@@ -65,10 +64,11 @@ func (p *Protocol) refreshSelf() {
 }
 
 func (p *Protocol) refreshPeerInfo(peers []peer.ID) {
-	if !atomic.CompareAndSwapInt32(&p.refreshing, 0, 1) {
+	/* if !atomic.CompareAndSwapInt32(&p.refreshing, 0, 1) {
+
 		return
 	}
-	defer atomic.StoreInt32(&p.refreshing, 0)
+	defer atomic.StoreInt32(&p.refreshing, 0)*/
 	var wg sync.WaitGroup
 	// 限制最大并发数量为20
 	ch := make(chan struct{}, 20)

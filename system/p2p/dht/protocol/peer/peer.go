@@ -101,11 +101,20 @@ func InitProtocol(env *protocol.P2PEnv) {
 			case <-ticker.C:
 				p.refreshSelf()
 			case <-ticker2.C:
+				log.Debug("ticket listpeers")
 				peers := p.RoutingTable.ListPeers()
-				if len(peers) <= maxPeers {
+				/*if len(peers) <= maxPeers {// bug?
 					break
 				}
 				p.refreshPeerInfo(peers[:len(peers)-maxPeers])
+				*/
+
+				//should be is
+				if len(peers)>=maxPeers{
+					peers=peers[:maxPeers]
+				}
+				p.refreshPeerInfo(peers)
+
 
 			case <-ticker3.C:
 				p.checkOutBound(p.PeerInfoManager.Fetch(p.Host.ID()).GetHeader().GetHeight())
