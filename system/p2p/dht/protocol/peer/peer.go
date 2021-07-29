@@ -89,7 +89,7 @@ func InitProtocol(env *protocol.P2PEnv) {
 	go func() {
 		ticker := time.NewTicker(time.Second / 2)
 		defer ticker.Stop()
-		ticker2 := time.NewTicker(time.Minute * 5)
+		ticker2 := time.NewTicker(time.Minute * 2)
 		defer ticker2.Stop()
 		ticker3 := time.NewTicker(time.Minute * 10)
 		defer ticker3.Stop()

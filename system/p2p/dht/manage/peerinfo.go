@@ -86,6 +86,7 @@ func (p *PeerInfoManager) FetchAll() []*types.Peer {
 		peers = append(peers, info.peer)
 		return true
 	})
+
 	if self != nil {
 		peers = append(peers, self)
 	}
