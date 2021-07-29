@@ -60,7 +60,7 @@ func (p *PeerInfoManager) Fetch(pid peer.ID) *types.Peer {
 		return nil
 	}
 	if info, ok := v.(*peerStoreInfo); ok {
-		if time.Since(info.storeTime) > time.Minute*30 {
+		if time.Since(info.storeTime) > time.Minute*10 {
 			p.peerInfo.Delete(key)
 			return nil
 		}
