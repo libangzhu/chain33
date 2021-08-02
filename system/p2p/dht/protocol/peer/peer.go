@@ -101,14 +101,15 @@ func InitProtocol(env *protocol.P2PEnv) {
 			case <-ticker.C:
 				p.refreshSelf()
 			case <-ticker2.C:
-				log.Debug("ticket listpeers")
+
 				peers := p.RoutingTable.ListPeers()
+				log.Info("peerlist","ticket 2min peerlist:",peers)
 				/*if len(peers) <= maxPeers {// bug?
 					break
 				}
 				p.refreshPeerInfo(peers[:len(peers)-maxPeers])
 				*/
-
+				log.Debug("ticket listpeers",len(peers))
 				//should be is
 				if len(peers)>=maxPeers{
 					peers=peers[:maxPeers]
@@ -133,6 +134,7 @@ func InitProtocol(env *protocol.P2PEnv) {
 			case <-p.Ctx.Done():
 				return
 			case <-ticker1.C:
+				log.Info("peerlist" ,"ticket 10 sec nearestpeers:",p.RoutingTable.NearestPeers(kbt.ConvertPeerID(p.Host.ID()), maxPeers))
 				p.refreshPeerInfo(p.RoutingTable.NearestPeers(kbt.ConvertPeerID(p.Host.ID()), maxPeers))
 			}
 		}
