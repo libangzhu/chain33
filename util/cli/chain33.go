@@ -149,6 +149,26 @@ func RunChain33(name, defCfg string) {
 	}()
 	//set maxprocs
 	runtime.GOMAXPROCS(cpuNum)
+	noteASCII:=`  Welcome to BlockChain's World,Power By ↓ ↓ ↓ ↓ ↓ ↓  
+		CCCCCCCCCCCCChhhhhhh                                 iiii                    333333333333333    333333333333333   
+     CCC::::::::::::Ch:::::h                                i::::i                  3:::::::::::::::33 3:::::::::::::::33 
+   CC:::::::::::::::Ch:::::h                                 linj                   3::::::33333::::::33::::::33333::::::3
+  C:::::CCCCCCCC::::Ch:::::h                                                        leowei1234567   3:::333333     3:::::3
+ C:::::C       vipwzw h::::h hhhhh         aaaaaaawanglei  iiiiiiinnn  suyanlong                3:::::3            3:::::3
+C:::::C               h::::hh:::::shg      a::::::::::::a  i:::::in:::nn::::::::nn              3:::::3            3:::::3
+C:::::C               h::::::::::::::hh    bysomeone::::a  i::::in::::::::::::::nn     yann-sjtu::::3     33333333:::::3 
+C:::::C               h:::::::hhh::::::h            a::::a  i::::inn:::::::::::::::n    3:::::::::::3      3:::::::::::3  
+C:::::C               h::::::h   h::::::h    chain33-shg::a  i:::i  n::::nnnn:::::n    YingQm33:::::3     33333333:::::3 
+C:::::C               h:::::h     h:::::h  aa::::::::::::a  i::::i  n::::n    n::::n            3:::::3            3:::::3
+C:::::C               h:::::h     h:::::h a::::aaaa::::::a  i::::i  n::::n    n::::n            3:::::3            3:::::3
+ C:::::C       lyh169 h:::::h     h:::::ha::::a    a:::::a  i::::i  n::::n    n::::n            3:::::3            3:::::3
+  C:::icehawk-hyb:::C h:::::h     h:::::ha::::a    a:::::a i::::::i n::::n    n:::libangzhu     3:::::33333333     3:::::3
+   CC:::::::::::::::C h:::::h     h:::::ha:::::aaaa::::::a i::::::i n::::n    n::::n3::::::mdj33::::::33::::::33333::::::3
+     CCC::::::::::::C h:::::h     h:::::h a::::::::::aa:::ai::::::i n::::n    n::::n3:::::::::::::::33 3:::::::::::::::33 
+        CCCCCxiesheng hhhhhhh     hhhhhhh  harrylee2015  DeveloperRen nnnnnn    nnnn zhengjunhe33333333    33333333333333   
+`
+	fmt.Println(noteASCII)
+	fmt.Printf("\n\nversion: %v   ,we will update it from time to time ，please follow https://github.com/33cn/chain33\n\n", version.GetVersion())
 	//开始区块链模块加载
 	//channel, rabitmq 等
 	crypto.Init(chain33Cfg.GetModuleConfig().Crypto, chain33Cfg.GetSubConfig().Crypto)

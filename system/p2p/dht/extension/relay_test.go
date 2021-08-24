@@ -37,6 +37,8 @@ func connect(t *testing.T, a, b host.Host) {
 	}
 }
 
+
+
 func TestRelay(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -94,6 +96,7 @@ func TestRelay(t *testing.T) {
 	require.Nil(t, err)
 	netRely := NewRelayDiscovery(hosts[0], discovery.NewRoutingDiscovery(kademliaDHT))
 	netRely.Advertise(ctx)
+
 	conn2, err = netRely.DialDestPeer(rinfo, dinfo)
 	if err != nil {
 		t.Fatal(err)
