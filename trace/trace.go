@@ -3,19 +3,18 @@ package trace
 import (
 	"expvar"
 	"github.com/33cn/chain33/common/log/log15"
-	"github.com/ethersphere/bee/pkg/jsonhttp"
-	"github.com/ethersphere/bee/pkg/logging/httpaccess"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/sirupsen/logrus"
 	"net/http"
 	"net/http/pprof"
 	"resenje.org/web"
 	"sync"
 )
 var log = log15.New("module","trace")
+
+
 
 type Service struct {
 	metricsRegistry    *prometheus.Registry
@@ -28,8 +27,8 @@ type Service struct {
 func New()*Service{
 	s := new(Service)
 	s.metricsRegistry=newMetricsRegistry()
-
-
+	s.setRouter(s.newrouter())
+	return s
 }
 
 
@@ -61,12 +60,37 @@ func (s *Service) setRouter(router http.Handler) {
 	s.handler = h
 }
 
+func (s*Service)newrouter()*mux.Router{
+	router := s.newBasicRouter()
+	router.Handle("/blacklist", MethodHandler{
+		"GET": http.HandlerFunc(s.blacklistPeersHandler),
+	})
+
+	router.Handle("/connect/{multi-address:.+}", MethodHandler{
+		"POST": http.HandlerFunc(s.peerConnectHandler),
+	})
+
+	router.Handle("/peers", MethodHandler{
+		"GET": http.HandlerFunc(s.peersHandler),
+	})
+
+	router.Handle("/chainstate", MethodHandler{
+		"GET": http.HandlerFunc(s.chainStateHandler),
+	})
+
+	router.Handle("/topology",MethodHandler{
+		"GET":http.HandlerFunc(s.topologyHandler),
+	})
+
+
+	return router
+}
+//newBasicRouter 基础信息
 func (s *Service) newBasicRouter() *mux.Router {
 	router := mux.NewRouter()
-	router.NotFoundHandler = http.HandlerFunc(jsonhttp.NotFoundHandler)
+	router.NotFoundHandler = http.HandlerFunc(NotFoundHandler)
 
 	router.Path("/metrics").Handler(web.ChainHandlers(
-		httpaccess.SetAccessLogLevelHandler(0), // suppress access log messages
 		web.FinalHandler(promhttp.InstrumentMetricHandler(
 			s.metricsRegistry,
 			promhttp.HandlerFor(s.metricsRegistry, promhttp.HandlerOpts{}),
@@ -83,30 +107,24 @@ func (s *Service) newBasicRouter() *mux.Router {
 	router.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
 	router.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
 	router.PathPrefix("/debug/pprof/").Handler(http.HandlerFunc(pprof.Index))
-
 	router.Handle("/debug/vars", expvar.Handler())
-
-	router.Handle("/health", web.ChainHandlers(
-		httpaccess.SetAccessLogLevelHandler(0), // suppress access log messages
-		web.FinalHandlerFunc(statusHandler),
-	))
-
-	router.Handle("/addresses", jsonhttp.MethodHandler{
-		"GET": http.HandlerFunc(s.addressesHandler),
-	})
-
-	if s.transaction != nil {
-		router.Handle("/transactions", jsonhttp.MethodHandler{
-			"GET": http.HandlerFunc(s.transactionListHandler),
-		})
-		router.Handle("/transactions/{hash}", jsonhttp.MethodHandler{
-			"GET":    http.HandlerFunc(s.transactionDetailHandler),
-			"POST":   http.HandlerFunc(s.transactionResendHandler),
-			"DELETE": http.HandlerFunc(s.transactionCancelHandler),
-		})
-	}
-
 	return router
 }
+
+
+// corsHandler sets CORS headers to HTTP response if allowed origins are configured.
+func (s *Service) corsHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if o := r.Header.Get("Origin"); o != "" {
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Origin", o)
+			w.Header().Set("Access-Control-Allow-Headers", "Origin, Accept, Authorization, Content-Type, X-Requested-With, Access-Control-Request-Headers, Access-Control-Request-Method")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS, POST, PUT, DELETE")
+			w.Header().Set("Access-Control-Max-Age", "3600")
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 
 
