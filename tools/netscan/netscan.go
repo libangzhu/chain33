@@ -257,6 +257,9 @@ func (n *NetScan) TicketWrite() {
 					}
 				}
 			}
+			if ip==""{
+				fmt.Println("peer",peer.String(),"addrs",pinfo.Addrs)
+			}
 			ipdata := n.CheckIp(ip)
 			if ipdata != nil {
 				ipdata.City = "city"
