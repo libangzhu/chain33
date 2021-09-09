@@ -8,7 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_mdns(t *testing.T) {
+func Test_mdns(t*testing.T){
+	for i:=0;i<1000;i++{
+		test_mdns(t)
+	}
+}
+func test_mdns(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

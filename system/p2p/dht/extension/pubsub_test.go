@@ -14,13 +14,18 @@ import (
 func testMsg(topic string, msg SubMsg) {
 	fmt.Println("testMsg", core.PeerID(msg.From).String(), "data", string(msg.Data))
 }
+func Test_mulpubsub(t *testing.T){
+	for i:=0;i<1;i++{
+		test_pubsub(t)
+	}
 
-func Test_pubsub(t *testing.T) {
+}
+func test_pubsub(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	hosts := getNetHosts(ctx, 2, t)
 	connect(t, hosts[0], hosts[1])
-
+	//NewPubSub(ctx, hosts[1], &p2pty.PubSubConfig{})
 	psub, err := NewPubSub(ctx, hosts[0], &p2pty.PubSubConfig{})
 	require.Nil(t, err)
 	err = psub.JoinAndSubTopic("bztest", testMsg)

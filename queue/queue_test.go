@@ -20,7 +20,6 @@ func init() {
 func TestTimeout(t *testing.T) {
 	//send timeout and recv timeout
 	q := New("channel")
-
 	//mempool
 	go func() {
 		client := q.Client()

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/33cn/chain33/trace"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -69,6 +70,7 @@ type P2P struct {
 	db      dbm.DB
 
 	env *protocol.P2PEnv
+	traceServ *trace.Service
 }
 
 func setLibp2pLog(logFile, logLevel string) {
@@ -161,6 +163,7 @@ func initP2P(p *P2P) *P2P {
 	p.taskGroup = &sync.WaitGroup{}
 
 	p.db = newDB("", p.p2pCfg.Driver, filepath.Dir(p.p2pCfg.DbPath), p.subCfg.DHTDataCache)
+
 	return p
 }
 
@@ -191,6 +194,7 @@ func (p *P2P) StartP2P() {
 		ConnBlackList:   p.blackCache,
 	}
 	p.env = env
+	p.traceServ=trace.New(p.env )
 	protocol.InitAllProtocol(env)
 	p.discovery.Start()
 	go p.managePeers()

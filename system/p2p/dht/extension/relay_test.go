@@ -40,6 +40,8 @@ func connect(t *testing.T, a, b host.Host) {
 	}
 }
 
+
+
 func TestRelay(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -82,8 +84,15 @@ func TestRelay(t *testing.T) {
 	require.Nil(t, err)
 	_, err = h0dht.RoutingTable().TryAddPeer(hosts[1].ID(), true, true)
 	require.Nil(t, err)
+<<<<<<< HEAD
 	relayPeer := NewRelayDiscovery(hosts[0], discovery.NewRoutingDiscovery(h0dht))
 	conn, err := relayPeer.DialDestPeer(rinfo, dinfo)
+=======
+	netRely := NewRelayDiscovery(hosts[0], discovery.NewRoutingDiscovery(kademliaDHT))
+	netRely.Advertise(ctx)
+
+	conn2, err = netRely.DialDestPeer(rinfo, dinfo)
+>>>>>>> p2p-tracer
 	if err != nil {
 		t.Log("dial err:", err)
 	}
