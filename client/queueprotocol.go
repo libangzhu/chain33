@@ -6,8 +6,13 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/33cn/chain33/common"
+
+	"github.com/33cn/chain33/common/crypto"
 
 	"github.com/33cn/chain33/common/log/log15"
 
@@ -1044,4 +1049,93 @@ func (q *QueueProtocol) GetConfig() *types.Chain33Config {
 		panic("Chain33Config is nil")
 	}
 	return cfg
+}
+
+// GetCryptoList 获取加密算法列表
+func (q *QueueProtocol) GetCryptoList() *types.CryptoList {
+	names, ids := crypto.GetCryptoList()
+	list := &types.CryptoList{Cryptos: make([]*types.Crypto, len(names))}
+	for i, name := range names {
+		list.Cryptos[i] = &types.Crypto{Name: name, TypeID: ids[i]}
+	}
+	return list
+}
+
+// SendDelayTx send delay transaction to mempool
+func (q *QueueProtocol) SendDelayTx(param *types.DelayTx, waitReply bool) (*types.Reply, error) {
+	if param.GetTx() == nil {
+		err := types.ErrNilTransaction
+		log.Error("SendDelayTx", "Error", err)
+		return nil, err
+	}
+	// 不需要阻塞等待
+	if !waitReply {
+		err := q.client.SendTimeout(
+			q.client.NewMessage(mempoolKey, types.EventAddDelayTx, param),
+			true, q.option.SendTimeout)
+		if err != nil {
+			log.Error("SendDelayTx", "txHash", common.ToHex(param.GetTx().Hash()), "send msg err", err.Error())
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	msg, err := q.send(mempoolKey, types.EventAddDelayTx, param)
+	if err != nil {
+		log.Error("SendDelayTx", "txHash", common.ToHex(param.GetTx().Hash()), "send msg err", err.Error())
+		return nil, err
+	}
+	reply, ok := msg.GetData().(*types.Reply)
+	if !ok {
+		return nil, types.ErrTypeAsset
+	}
+
+	if !reply.GetIsOk() {
+		return nil, errors.New(string(reply.GetMsg()))
+	}
+	reply.Msg = param.GetTx().Hash()
+	return reply, err
+}
+
+//AddBlacklist add peer to blacklist
+func (q *QueueProtocol) AddBlacklist(req *types.BlackPeer) (*types.Reply, error) {
+	msg, err := q.send(p2pKey, types.EventAddBlacklist, req)
+	if err != nil {
+		log.Error("AddBlacklist", "Error", err.Error())
+		return nil, err
+	}
+	if reply, ok := msg.GetData().(*types.Reply); ok {
+		return reply, nil
+	}
+
+	return nil, types.ErrInvalidParam
+}
+
+//DelBlacklist delete peer from blacklist
+func (q *QueueProtocol) DelBlacklist(req *types.BlackPeer) (*types.Reply, error) {
+	msg, err := q.send(p2pKey, types.EventDelBlacklist, req)
+	if err != nil {
+		log.Error("DelBlacklist", "Error", err.Error())
+		return nil, err
+	}
+	if reply, ok := msg.GetData().(*types.Reply); ok {
+		return reply, nil
+	}
+	return nil, types.ErrInvalidParam
+}
+
+//ShowBlacklist show all blacklist peers
+func (q *QueueProtocol) ShowBlacklist(req *types.ReqNil) (*types.Blacklist, error) {
+	msg, err := q.send(p2pKey, types.EventShowBlacklist, req)
+	if err != nil {
+		log.Error("DelBlacklist", "Error", err.Error())
+		return nil, err
+	}
+
+	if reply, ok := msg.GetData().(*types.Blacklist); ok {
+		return reply, nil
+	}
+
+	return nil, types.ErrInvalidParam
+
 }

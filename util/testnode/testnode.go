@@ -99,6 +99,7 @@ func newWithConfig(cfg *types.Chain33Config, mockapi client.QueueProtocolAPI) *C
 func newWithConfigNoLock(cfg *types.Chain33Config, mockapi client.QueueProtocolAPI) *Chain33Mock {
 	mfg := cfg.GetModuleConfig()
 	sub := cfg.GetSubConfig()
+	crypto.Init(mfg.Crypto, sub.Crypto)
 	q := queue.New("channel")
 	q.SetConfig(cfg)
 	types.Debug = false
@@ -384,7 +385,7 @@ func (mock *Chain33Mock) WaitTx(hash []byte) (*rpctypes.TransactionDetail, error
 //SendHot :
 func (mock *Chain33Mock) SendHot() error {
 	types.AssertConfig(mock.client)
-	tx := util.CreateCoinsTx(mock.client.GetConfig(), mock.GetGenesisKey(), mock.GetHotAddress(), 10000*types.Coin)
+	tx := util.CreateCoinsTx(mock.client.GetConfig(), mock.GetGenesisKey(), mock.GetHotAddress(), 10000*types.DefaultCoinPrecision)
 	mock.SendTx(tx)
 	return mock.Wait()
 }

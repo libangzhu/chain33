@@ -110,7 +110,7 @@ func (chain *BlockChain) ExportBlock(title, dbPath string, startHeight int64) er
 			TestNet: cfg.IsTestNet(),
 		}
 		if !isValidFileHeader(oldfileHeader, &newfileHeader) {
-			exportlog.Error("exportBlock:inValidFileHeader", "oldfileHeader", oldfileHeader, "newfileHeader", newfileHeader)
+			exportlog.Error("exportBlock:inValidFileHeader", "oldfileHeader", oldfileHeader, "newfileHeader", newfileHeader.String())
 			return types.ErrInValidFileHeader
 		}
 		//需要在已有导出的endheight区块继续接着导出，需要校验endHeight
@@ -125,9 +125,9 @@ func (chain *BlockChain) ExportBlock(title, dbPath string, startHeight int64) er
 		}
 
 		// 需要校验block是否连续
-		block, err := chain.blockStore.LoadBlockByHeight(endBlock.Height + 1)
+		block, err := chain.blockStore.LoadBlock(endBlock.Height+1, nil)
 		if err != nil {
-			exportlog.Error("exportBlock:LoadBlockByHeight", "Height", endBlock.Height+1, "error", err)
+			exportlog.Error("exportBlock:LoadBlock", "Height", endBlock.Height+1, "error", err)
 			return err
 		}
 		parentHash := block.Block.ParentHash
@@ -171,9 +171,9 @@ func (chain *BlockChain) exportMainBlock(startHeight, endheight int64, batch dbm
 	cfg := chain.client.GetConfig()
 	var count = 0
 	for height := startHeight; height <= endheight; height++ {
-		block, err := chain.blockStore.LoadBlockByHeight(height)
+		block, err := chain.blockStore.LoadBlock(height, nil)
 		if err != nil {
-			exportlog.Error("exportMainBlock:LoadBlockByHeight", "height", height, "error", err)
+			exportlog.Error("exportMainBlock:LoadBlock", "height", height, "error", err)
 			return err
 		}
 		count += block.Size()
@@ -228,7 +228,7 @@ func (chain *BlockChain) ImportBlock(filename, dbPath string) error {
 	fileHeader, err := getFileHeader(db)
 
 	if err != nil || fileHeader.StartHeight < 0 || !isValidFileHeader(fileHeader, &newfileHeader) {
-		exportlog.Error("importBlock:fileHeader", "filename", filename, "dbPath", dbPath, "fileHeader", fileHeader, "cfg.fileHeader", newfileHeader, "err", err)
+		exportlog.Error("importBlock:fileHeader", "filename", filename, "dbPath", dbPath, "fileHeader", fileHeader, "cfg.fileHeader", newfileHeader.String(), "err", err)
 		return types.ErrInValidFileHeader
 	}
 	startHeight := fileHeader.StartHeight

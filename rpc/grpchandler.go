@@ -14,6 +14,26 @@ import (
 	"golang.org/x/net/context"
 )
 
+// SendTransactionSync send transaction by network and query
+func (g *Grpc) SendTransactionSync(ctx context.Context, in *pb.Transaction) (*pb.Reply, error) {
+	reply, err := g.cli.SendTx(in)
+	if err != nil {
+		return reply, err
+	}
+	hash := in.Hash()
+	for i := 0; i < 100; i++ {
+		detail, err := g.cli.QueryTx(&pb.ReqHash{Hash: hash})
+		if err == pb.ErrInvalidParam || err == pb.ErrTypeAsset {
+			return nil, err
+		}
+		if detail != nil {
+			return &pb.Reply{IsOk: true, Msg: hash}, nil
+		}
+		time.Sleep(time.Second / 3)
+	}
+	return nil, pb.ErrTimeout
+}
+
 // SendTransaction send transaction by network
 func (g *Grpc) SendTransaction(ctx context.Context, in *pb.Transaction) (*pb.Reply, error) {
 	return g.cli.SendTx(in)
@@ -519,4 +539,39 @@ func (g *Grpc) GetAccount(ctx context.Context, in *pb.ReqGetAccount) (*pb.Wallet
 	}
 
 	return acc.(*pb.WalletAccount), nil
+}
+
+// GetServerTime get server time
+func (g *Grpc) GetServerTime(ctx context.Context, in *pb.ReqNil) (*pb.ServerTime, error) {
+	serverTime := &pb.ServerTime{
+		CurrentTimestamp: pb.Now().Unix(),
+	}
+	return serverTime, nil
+}
+
+// GetCryptoList 获取加密算法列表
+func (g *Grpc) GetCryptoList(ctx context.Context, in *pb.ReqNil) (*pb.CryptoList, error) {
+	return g.cli.GetCryptoList(), nil
+}
+
+// SendDelayTransaction send delay tx
+func (g *Grpc) SendDelayTransaction(ctx context.Context, in *pb.DelayTx) (*pb.Reply, error) {
+	return g.cli.SendDelayTx(in, true)
+}
+
+// GetChainConfig 获取chain config 参数
+func (g *Grpc) GetChainConfig(ctx context.Context, in *pb.ReqNil) (*pb.ChainConfigInfo, error) {
+	cfg := g.cli.GetConfig()
+	return &pb.ChainConfigInfo{
+		Title:          cfg.GetTitle(),
+		CoinExec:       cfg.GetCoinExec(),
+		CoinSymbol:     cfg.GetCoinSymbol(),
+		CoinPrecision:  cfg.GetCoinPrecision(),
+		TokenPrecision: cfg.GetTokenPrecision(),
+		ChainID:        cfg.GetChainID(),
+		MaxTxFee:       cfg.GetMaxTxFee(),
+		MinTxFeeRate:   cfg.GetMinTxFeeRate(),
+		MaxTxFeeRate:   cfg.GetMaxTxFeeRate(),
+		IsPara:         cfg.IsPara(),
+	}, nil
 }

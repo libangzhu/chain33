@@ -5,9 +5,13 @@
 package rpc
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
+	"net/http"
 	"net/rpc"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/33cn/chain33/client"
@@ -31,6 +35,7 @@ var (
 	jrpcFuncBlacklist           = make(map[string]bool)
 	grpcFuncBlacklist           = make(map[string]bool)
 	rpcFilterPrintFuncBlacklist = make(map[string]bool)
+	grpcFuncListLock            = sync.RWMutex{}
 )
 
 // Chain33  a channel client
@@ -77,6 +82,28 @@ func (s *JSONRPCServer) Close() {
 	}
 }
 
+func checkBasicAuth(r *http.Request) bool {
+	if rpcCfg.JrpcUserName == "" && rpcCfg.JrpcUserPasswd == "" {
+		return true
+	}
+
+	s := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
+	if len(s) != 2 {
+		return false
+	}
+
+	b, err := base64.StdEncoding.DecodeString(s[1])
+	if err != nil {
+		return false
+	}
+
+	pair := strings.SplitN(string(b), ":", 2)
+	if len(pair) != 2 {
+		return false
+	}
+	return pair[0] == rpcCfg.JrpcUserName && pair[1] == rpcCfg.JrpcUserPasswd
+}
+
 func checkIPWhitelist(addr string) bool {
 	//回环网络直接允许
 	ip := net.ParseIP(addr)
@@ -107,8 +134,13 @@ func checkJrpcFuncWhitelist(funcName string) bool {
 	}
 	return false
 }
-func checkGrpcFuncWhitelist(funcName string) bool {
 
+func checkGrpcFuncValidity(funcName string) bool {
+	grpcFuncListLock.RLock()
+	defer grpcFuncListLock.RUnlock()
+	if _, ok := grpcFuncBlacklist[funcName]; ok {
+		return false
+	}
 	if _, ok := grpcFuncWhitelist["*"]; ok {
 		return true
 	}
@@ -118,14 +150,9 @@ func checkGrpcFuncWhitelist(funcName string) bool {
 	}
 	return false
 }
+
 func checkJrpcFuncBlacklist(funcName string) bool {
 	if _, ok := jrpcFuncBlacklist[funcName]; ok {
-		return true
-	}
-	return false
-}
-func checkGrpcFuncBlacklist(funcName string) bool {
-	if _, ok := grpcFuncBlacklist[funcName]; ok {
 		return true
 	}
 	return false
@@ -357,6 +384,8 @@ func InitJrpcFuncWhitelist(cfg *types.RPC) {
 
 // InitGrpcFuncWhitelist init grpc function whitelist
 func InitGrpcFuncWhitelist(cfg *types.RPC) {
+	grpcFuncListLock.Lock()
+	defer grpcFuncListLock.Unlock()
 	if len(cfg.GrpcFuncWhitelist) == 0 {
 		grpcFuncWhitelist["*"] = true
 		return
@@ -384,6 +413,8 @@ func InitJrpcFuncBlacklist(cfg *types.RPC) {
 
 // InitGrpcFuncBlacklist init grpc function blacklist
 func InitGrpcFuncBlacklist(cfg *types.RPC) {
+	grpcFuncListLock.Lock()
+	defer grpcFuncListLock.Unlock()
 	if len(cfg.GrpcFuncBlacklist) == 0 {
 		grpcFuncBlacklist["CloseQueue"] = true
 		return

@@ -14,6 +14,29 @@ type QueueProtocolAPI struct {
 	mock.Mock
 }
 
+// AddBlacklist provides a mock function with given fields: req
+func (_m *QueueProtocolAPI) AddBlacklist(req *types.BlackPeer) (*types.Reply, error) {
+	ret := _m.Called(req)
+
+	var r0 *types.Reply
+	if rf, ok := ret.Get(0).(func(*types.BlackPeer) *types.Reply); ok {
+		r0 = rf(req)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.Reply)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(*types.BlackPeer) error); ok {
+		r1 = rf(req)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // AddPushSubscribe provides a mock function with given fields: param
 func (_m *QueueProtocolAPI) AddPushSubscribe(param *types.PushSubscribeReq) (*types.ReplySubscribePush, error) {
 	ret := _m.Called(param)
@@ -58,6 +81,29 @@ func (_m *QueueProtocolAPI) CloseQueue() (*types.Reply, error) {
 	var r1 error
 	if rf, ok := ret.Get(1).(func() error); ok {
 		r1 = rf()
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// DelBlacklist provides a mock function with given fields: req
+func (_m *QueueProtocolAPI) DelBlacklist(req *types.BlackPeer) (*types.Reply, error) {
+	ret := _m.Called(req)
+
+	var r0 *types.Reply
+	if rf, ok := ret.Get(0).(func(*types.BlackPeer) *types.Reply); ok {
+		r0 = rf(req)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.Reply)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(*types.BlackPeer) error); ok {
+		r1 = rf(req)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -282,6 +328,22 @@ func (_m *QueueProtocolAPI) GetConfig() *types.Chain33Config {
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*types.Chain33Config)
+		}
+	}
+
+	return r0
+}
+
+// GetCryptoList provides a mock function with given fields:
+func (_m *QueueProtocolAPI) GetCryptoList() *types.CryptoList {
+	ret := _m.Called()
+
+	var r0 *types.CryptoList
+	if rf, ok := ret.Get(0).(func() *types.CryptoList); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.CryptoList)
 		}
 	}
 
@@ -1087,6 +1149,29 @@ func (_m *QueueProtocolAPI) QueryTx(param *types.ReqHash) (*types.TransactionDet
 	return r0, r1
 }
 
+// SendDelayTx provides a mock function with given fields: param, waitReply
+func (_m *QueueProtocolAPI) SendDelayTx(param *types.DelayTx, waitReply bool) (*types.Reply, error) {
+	ret := _m.Called(param, waitReply)
+
+	var r0 *types.Reply
+	if rf, ok := ret.Get(0).(func(*types.DelayTx, bool) *types.Reply); ok {
+		r0 = rf(param, waitReply)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.Reply)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(*types.DelayTx, bool) error); ok {
+		r1 = rf(param, waitReply)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // SendTx provides a mock function with given fields: param
 func (_m *QueueProtocolAPI) SendTx(param *types.Transaction) (*types.Reply, error) {
 	ret := _m.Called(param)
@@ -1103,6 +1188,29 @@ func (_m *QueueProtocolAPI) SendTx(param *types.Transaction) (*types.Reply, erro
 	var r1 error
 	if rf, ok := ret.Get(1).(func(*types.Transaction) error); ok {
 		r1 = rf(param)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// ShowBlacklist provides a mock function with given fields: req
+func (_m *QueueProtocolAPI) ShowBlacklist(req *types.ReqNil) (*types.Blacklist, error) {
+	ret := _m.Called(req)
+
+	var r0 *types.Blacklist
+	if rf, ok := ret.Get(0).(func(*types.ReqNil) *types.Blacklist); ok {
+		r0 = rf(req)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.Blacklist)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(*types.ReqNil) error); ok {
+		r1 = rf(req)
 	} else {
 		r1 = ret.Error(1)
 	}

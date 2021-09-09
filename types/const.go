@@ -6,6 +6,10 @@ package types
 
 import (
 	"reflect"
+
+	"github.com/33cn/chain33/system/crypto/ed25519"
+	"github.com/33cn/chain33/system/crypto/secp256k1"
+	"github.com/33cn/chain33/system/crypto/sm2"
 )
 
 var slash = []byte("-")
@@ -35,7 +39,9 @@ const (
 
 //DefaultCoinsSymbol 默认的主币名称
 const (
-	DefaultCoinsSymbol = "bty"
+	DefaultCoinsExec     = "coins"
+	DefaultCoinsSymbol   = "bty"
+	DefaultCoinPrecision = int64(1e8)
 )
 
 //UserKeyX 用户自定义执行器前缀byte类型
@@ -47,21 +53,16 @@ var (
 
 //基本全局常量定义
 const (
-	InputPrecision        float64 = 1e4
-	Multiple1E4           int64   = 1e4
-	BTY                           = "BTY"
-	TxGroupMaxCount               = 20
-	MinerAction                   = "miner"
-	Int1E4                int64   = 10000
-	Float1E4              float64 = 10000.0
-	AirDropMinIndex       uint32  = 100000000         //通过钱包的seed生成一个空投地址，最小index索引
-	AirDropMaxIndex       uint32  = 101000000         //通过钱包的seed生成一个空投地址，最大index索引
-	MaxBlockCountPerTime  int64   = 1000              //从数据库中一次性获取block的最大数 1000个
-	MaxBlockSizePerTime           = 100 * 1024 * 1024 //从数据库中一次性获取block的最大size100M
-	AddBlock              int64   = 1
-	DelBlock              int64   = 2
-	MainChainName                 = "main"
-	MaxHeaderCountPerTime int64   = 10000 //从数据库中一次性获取header的最大数 10000个
+	BTY                          = "BTY"
+	MinerAction                  = "miner"
+	AirDropMinIndex       uint32 = 100000000         //通过钱包的seed生成一个空投地址，最小index索引
+	AirDropMaxIndex       uint32 = 101000000         //通过钱包的seed生成一个空投地址，最大index索引
+	MaxBlockCountPerTime  int64  = 1000              //从数据库中一次性获取block的最大数 1000个
+	MaxBlockSizePerTime          = 100 * 1024 * 1024 //从数据库中一次性获取block的最大size100M
+	AddBlock              int64  = 1
+	DelBlock              int64  = 2
+	MainChainName                = "main"
+	MaxHeaderCountPerTime int64  = 10000 //从数据库中一次性获取header的最大数 10000个
 
 )
 
@@ -70,13 +71,13 @@ const (
 //ty = 3 -> sm2
 //ty = 4 -> onetimeed25519
 //ty = 5 -> RingBaseonED25519
-//ty = 1+offset(1<<8) ->auth_ecdsa
-//ty = 2+offset(1<<8) -> auth_sm2
+//ty = 1+offset(1<<8) -> secp256r1
+//ty = 2+offset(1<<8) -> sm2
 const (
 	Invalid   = 0
-	SECP256K1 = 1
-	ED25519   = 2
-	SM2       = 3
+	SECP256K1 = secp256k1.ID
+	ED25519   = ed25519.ID
+	SM2       = sm2.ID
 )
 
 //log type
@@ -141,20 +142,19 @@ const (
 //TxHeightFlag 标记是一个时间还是一个 TxHeight
 var TxHeightFlag int64 = 1 << 62
 
-//HighAllowPackHeight eg: current Height is 10000
-//TxHeight is  10010
-//=> Height <= TxHeight + HighAllowPackHeight
-//=> Height >= TxHeight - LowAllowPackHeight
+//HighAllowPackHeight txHeight打包上限高度
+//eg: currentHeight = 10000
+//某交易的expire=TxHeightFlag+ currentHeight + 10, 则TxHeight=10010
+//打包的区块高度必须满足， Height >= TxHeight - LowAllowPackHeight && Height <= TxHeight + HighAllowPackHeight
 //那么交易可以打包的范围是: 10010 - 100 = 9910 , 10010 + 200 =  10210 (9910,10210)
-//可以合法的打包交易
 //注意，这两个条件必须同时满足.
-//关于交易去重复:
-//也就是说，另外一笔相同的交易，只能被打包在这个区间(9910,10210)。
-//那么检查交易重复的时候，我只要检查 9910 - currentHeight 这个区间的交易不要重复就好了
-var HighAllowPackHeight int64 = 90
+//关于交易查重:
+//也就是说，两笔相同的交易必然有相同的expire，即TxHeight相同，以及对应的打包区间一致，只能被打包在这个区间(9910,10210)。
+//那么检查交易重复的时候，我只要检查 9910 - currentHeight 这个区间的交易是否有重复
+var HighAllowPackHeight int64 = 600
 
 //LowAllowPackHeight 允许打包的low区块高度
-var LowAllowPackHeight int64 = 30
+var LowAllowPackHeight int64 = 200
 
 //MaxAllowPackInterval 允许打包的最大区间值
 var MaxAllowPackInterval int64 = 5000

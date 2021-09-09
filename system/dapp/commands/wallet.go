@@ -7,12 +7,12 @@ package commands
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/33cn/chain33/rpc/jsonclient"
 	rpctypes "github.com/33cn/chain33/rpc/types"
 	commandtypes "github.com/33cn/chain33/system/dapp/commands/types"
+	ctype "github.com/33cn/chain33/system/dapp/commands/types"
 	"github.com/33cn/chain33/types"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +37,7 @@ func WalletCmd() *cobra.Command {
 		NoBalanceCmd(),
 		SetFeeCmd(),
 		SendTxCmd(),
+		SignRawTxWithCertCmd(),
 	)
 
 	return cmd
@@ -100,7 +101,7 @@ func unLock(cmd *cobra.Command, args []string) {
 		WalletOrTicket: walletOrTicket,
 	}
 	var res rpctypes.Reply
-	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.UnLock", params, &res)
+	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.UnLock", &params, &res)
 	ctx.Run()
 }
 
@@ -149,7 +150,7 @@ func setPwd(cmd *cobra.Command, args []string) {
 		NewPass: newPwd,
 	}
 	var res rpctypes.Reply
-	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.SetPasswd", params, &res)
+	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.SetPasswd", &params, &res)
 	ctx.Run()
 }
 
@@ -186,15 +187,21 @@ func walletListTxs(cmd *cobra.Command, args []string) {
 	}
 	var res rpctypes.WalletTxDetails
 	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.WalletTxList", params, &res)
-	ctx.SetResultCb(parseWalletTxListRes)
-	ctx.Run()
+	ctx.SetResultCbExt(parseWalletTxListRes)
+	cfg, err := commandtypes.GetChainConfig(rpcLaddr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+	ctx.RunExt(cfg)
 }
 
-func parseWalletTxListRes(arg interface{}) (interface{}, error) {
-	res := arg.(*rpctypes.WalletTxDetails)
+func parseWalletTxListRes(arg ...interface{}) (interface{}, error) {
+	res := arg[0].(*rpctypes.WalletTxDetails)
+	cfg := arg[1].(*rpctypes.ChainConfigInfo)
 	var result commandtypes.WalletTxDetailsResult
 	for _, v := range res.TxDetails {
-		amountResult := strconv.FormatFloat(float64(v.Amount)/float64(types.Coin), 'f', 4, 64)
+		amountResult := types.FormatAmount2FloatDisplay(v.Amount, cfg.CoinPrecision, true)
 		wtxd := &commandtypes.WalletTxDetailResult{
 			Tx:         commandtypes.DecodeTransaction(v.Tx),
 			Receipt:    v.Receipt,
@@ -234,7 +241,7 @@ func mergeBalance(cmd *cobra.Command, args []string) {
 		To: toAddr,
 	}
 	var res rpctypes.ReplyHashes
-	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.MergeBalance", params, &res)
+	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.MergeBalance", &params, &res)
 	ctx.Run()
 }
 
@@ -321,6 +328,54 @@ func addSignRawTxFlags(cmd *cobra.Command) {
 	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
 }
 
+// SignRawTxWithCertCmd sign raw tx
+func SignRawTxWithCertCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "signWithCert",
+		Short: "SignWithCert transaction",
+		Run:   signRawTxWithCert,
+	}
+	addSignRawTxWithCertFlags(cmd)
+	return cmd
+}
+
+func addSignRawTxWithCertFlags(cmd *cobra.Command) {
+	cmd.Flags().StringP("data", "d", "", "raw transaction data")
+	cmd.MarkFlagRequired("data")
+	cmd.Flags().StringP("signType", "s", "sm2", "sign type")
+	cmd.Flags().StringP("keyFilePath", "k", "", "private key file path")
+	cmd.Flags().StringP("certFilePath", "c", "", "cert file path")
+	// A duration string is a possibly signed sequence of
+	// decimal numbers, each with optional fraction and a unit suffix,
+	// such as "300ms", "-1.5h" or "2h45m".
+	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+}
+
+func signRawTxWithCert(cmd *cobra.Command, args []string) {
+	//rpcLaddr, _ := cmd.Flags().GetString("rpc_laddr")
+	data, _ := cmd.Flags().GetString("data")
+	signType, _ := cmd.Flags().GetString("signType")
+	keyFilePath, _ := cmd.Flags().GetString("keyFilePath")
+	certFilePath, _ := cmd.Flags().GetString("certFilePath")
+
+	privatekey, err := ctype.LoadPrivKeyFromLocal(signType, keyFilePath)
+	if err != nil {
+		fmt.Println("load account from local have err", err)
+		return
+	}
+	certByte, err := ctype.ReadFile(certFilePath)
+	if err != nil {
+		fmt.Println("load cert file have err", err)
+		return
+	}
+	signTx, err := ctype.CreateTxWithCert(signType, privatekey, data, certByte)
+	if err != nil {
+		fmt.Println("load cert file have err", err)
+		return
+	}
+	fmt.Println(signTx)
+}
+
 func noBalanceTx(cmd *cobra.Command, args []string) {
 	rpcLaddr, _ := cmd.Flags().GetString("rpc_laddr")
 	data, _ := cmd.Flags().GetString("data")
@@ -342,7 +397,7 @@ func noBalanceTx(cmd *cobra.Command, args []string) {
 		Expire:  expire,
 		Privkey: privkey,
 	}
-	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.CreateNoBalanceTransaction", params, nil)
+	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.CreateNoBalanceTransaction", &params, nil)
 	ctx.RunWithoutMarshal()
 }
 
@@ -360,17 +415,28 @@ func signRawTx(cmd *cobra.Command, args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
-	feeInt64 := int64(fee * 1e4)
+
+	cfg, err := commandtypes.GetChainConfig(rpcLaddr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+	feeInt64, err := types.FormatFloatDisplay2Value(fee, cfg.CoinPrecision)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+
 	params := types.ReqSignRawTx{
 		Addr:      addr,
 		Privkey:   key,
 		TxHex:     data,
 		Expire:    expire,
 		Index:     index,
-		Fee:       feeInt64 * 1e4,
+		Fee:       feeInt64,
 		NewToAddr: to,
 	}
-	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.SignRawTx", params, nil)
+	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.SignRawTx", &params, nil)
 	ctx.RunWithoutMarshal()
 }
 
@@ -393,12 +459,22 @@ func addSetFeeFlags(cmd *cobra.Command) {
 func setFee(cmd *cobra.Command, args []string) {
 	rpcLaddr, _ := cmd.Flags().GetString("rpc_laddr")
 	amount, _ := cmd.Flags().GetFloat64("amount")
-	amountInt64 := int64(amount * 1e4)
+
+	cfg, err := commandtypes.GetChainConfig(rpcLaddr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+	amountInt64, err := types.FormatFloatDisplay2Value(amount, cfg.CoinPrecision)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
 	params := types.ReqWalletSetFee{
-		Amount: amountInt64 * 1e4,
+		Amount: amountInt64,
 	}
 	var res rpctypes.Reply
-	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.SetTxFee", params, &res)
+	ctx := jsonclient.NewRPCCtx(rpcLaddr, "Chain33.SetTxFee", &params, &res)
 	ctx.Run()
 }
 

@@ -18,6 +18,13 @@ const (
 
 	// DefaultP2PPort 默认端口
 	DefaultP2PPort = 13803
+
+	// MinPercentage ...
+	MinPercentage = 10
+	// MaxPercentage ...
+	MaxPercentage = 100
+	// DefaultPercentage ...
+	DefaultPercentage = 30
 )
 
 var (
@@ -34,8 +41,6 @@ var (
 	// ErrInvalidResponse invalid response error
 	ErrInvalidResponse = errors.New("invalid response")
 
-	// ExpiredTime expired time
-	ExpiredTime = time.Hour * 12
 	// RefreshInterval refresh interval
 	RefreshInterval = time.Hour * 3
 )

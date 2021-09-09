@@ -617,6 +617,66 @@ func (_m *Chain33Client) GetBlocks(ctx context.Context, in *types.ReqBlocks, opt
 	return r0, r1
 }
 
+// GetChainConfig provides a mock function with given fields: ctx, in, opts
+func (_m *Chain33Client) GetChainConfig(ctx context.Context, in *types.ReqNil, opts ...grpc.CallOption) (*types.ChainConfigInfo, error) {
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
+
+	var r0 *types.ChainConfigInfo
+	if rf, ok := ret.Get(0).(func(context.Context, *types.ReqNil, ...grpc.CallOption) *types.ChainConfigInfo); ok {
+		r0 = rf(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.ChainConfigInfo)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *types.ReqNil, ...grpc.CallOption) error); ok {
+		r1 = rf(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetCryptoList provides a mock function with given fields: ctx, in, opts
+func (_m *Chain33Client) GetCryptoList(ctx context.Context, in *types.ReqNil, opts ...grpc.CallOption) (*types.CryptoList, error) {
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
+
+	var r0 *types.CryptoList
+	if rf, ok := ret.Get(0).(func(context.Context, *types.ReqNil, ...grpc.CallOption) *types.CryptoList); ok {
+		r0 = rf(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.CryptoList)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *types.ReqNil, ...grpc.CallOption) error); ok {
+		r1 = rf(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // GetFatalFailure provides a mock function with given fields: ctx, in, opts
 func (_m *Chain33Client) GetFatalFailure(ctx context.Context, in *types.ReqNil, opts ...grpc.CallOption) (*types.Int32, error) {
 	_va := make([]interface{}, len(opts))
@@ -1029,6 +1089,36 @@ func (_m *Chain33Client) GetSequenceByHash(ctx context.Context, in *types.ReqHas
 
 	var r1 error
 	if rf, ok := ret.Get(1).(func(context.Context, *types.ReqHash, ...grpc.CallOption) error); ok {
+		r1 = rf(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetServerTime provides a mock function with given fields: ctx, in, opts
+func (_m *Chain33Client) GetServerTime(ctx context.Context, in *types.ReqNil, opts ...grpc.CallOption) (*types.ServerTime, error) {
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
+
+	var r0 *types.ServerTime
+	if rf, ok := ret.Get(0).(func(context.Context, *types.ReqNil, ...grpc.CallOption) *types.ServerTime); ok {
+		r0 = rf(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.ServerTime)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *types.ReqNil, ...grpc.CallOption) error); ok {
 		r1 = rf(ctx, in, opts...)
 	} else {
 		r1 = ret.Error(1)
@@ -1547,6 +1637,36 @@ func (_m *Chain33Client) SaveSeed(ctx context.Context, in *types.SaveSeedByPw, o
 	return r0, r1
 }
 
+// SendDelayTransaction provides a mock function with given fields: ctx, in, opts
+func (_m *Chain33Client) SendDelayTransaction(ctx context.Context, in *types.DelayTx, opts ...grpc.CallOption) (*types.Reply, error) {
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
+
+	var r0 *types.Reply
+	if rf, ok := ret.Get(0).(func(context.Context, *types.DelayTx, ...grpc.CallOption) *types.Reply); ok {
+		r0 = rf(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.Reply)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *types.DelayTx, ...grpc.CallOption) error); ok {
+		r1 = rf(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // SendToAddress provides a mock function with given fields: ctx, in, opts
 func (_m *Chain33Client) SendToAddress(ctx context.Context, in *types.ReqWalletSendToAddress, opts ...grpc.CallOption) (*types.ReplyHash, error) {
 	_va := make([]interface{}, len(opts))
@@ -1579,6 +1699,36 @@ func (_m *Chain33Client) SendToAddress(ctx context.Context, in *types.ReqWalletS
 
 // SendTransaction provides a mock function with given fields: ctx, in, opts
 func (_m *Chain33Client) SendTransaction(ctx context.Context, in *types.Transaction, opts ...grpc.CallOption) (*types.Reply, error) {
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
+
+	var r0 *types.Reply
+	if rf, ok := ret.Get(0).(func(context.Context, *types.Transaction, ...grpc.CallOption) *types.Reply); ok {
+		r0 = rf(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.Reply)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *types.Transaction, ...grpc.CallOption) error); ok {
+		r1 = rf(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// SendTransactionSync provides a mock function with given fields: ctx, in, opts
+func (_m *Chain33Client) SendTransactionSync(ctx context.Context, in *types.Transaction, opts ...grpc.CallOption) (*types.Reply, error) {
 	_va := make([]interface{}, len(opts))
 	for _i := range opts {
 		_va[_i] = opts[_i]

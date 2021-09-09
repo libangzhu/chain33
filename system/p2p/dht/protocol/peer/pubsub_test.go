@@ -76,7 +76,6 @@ func testSubTopic(t *testing.T, p *Protocol) {
 			if subReply.IsOk {
 				var reply types.SubTopicReply
 				types.Decode(subReply.GetMsg(), &reply)
-				require.NotNil(t, reply)
 				t.Log("reply", reply.GetMsg())
 			} else {
 				//订阅失败
@@ -195,7 +194,8 @@ func TestPubSub(t *testing.T) {
 	q := queue.New("test")
 	testBlockRecvSubData(t, q)
 	testMempoolRecvSubData(t, q)
-	protocol := initEnv(t, q)
+	protocol, cancel := initEnv(t, q)
+	defer cancel()
 	testSubTopic(t, protocol) //订阅topic
 
 	topics := testFetchTopics(t, protocol) //获取topic list

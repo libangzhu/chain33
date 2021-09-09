@@ -11,7 +11,6 @@ import (
 
 	"github.com/33cn/chain33/common"
 	"github.com/33cn/chain33/common/crypto"
-	proto "github.com/golang/protobuf/proto"
 )
 
 // Hash 获取block的hash值
@@ -32,19 +31,13 @@ func (block *Block) HashByForkHeight(forkheight int64) []byte {
 
 //HashNew 新版本的Hash
 func (block *Block) HashNew() []byte {
-	data, err := proto.Marshal(block.getHeaderHashNew())
-	if err != nil {
-		panic(err)
-	}
+	data := Encode(block.getHeaderHashNew())
 	return common.Sha256(data)
 }
 
 //HashOld 老版本的hash
 func (block *Block) HashOld() []byte {
-	data, err := proto.Marshal(block.getHeaderHashOld())
-	if err != nil {
-		panic(err)
-	}
+	data := Encode(block.getHeaderHashOld())
 	return common.Sha256(data)
 }
 
@@ -98,7 +91,7 @@ func VerifySignature(cfg *Chain33Config, block *Block, txs []*Transaction) bool 
 		return false
 	}
 	//检查交易的签名
-	return verifyTxsSignature(txs)
+	return verifyTxsSignature(txs, block.GetHeight())
 }
 
 // CheckSign 检测block的签名,以及交易的签名
@@ -111,10 +104,10 @@ func (block *Block) verifySignature(cfg *Chain33Config) bool {
 		return true
 	}
 	hash := block.Hash(cfg)
-	return CheckSign(hash, "", block.GetSignature())
+	return CheckSign(hash, "", block.GetSignature(), block.GetHeight())
 }
 
-func verifyTxsSignature(txs []*Transaction) bool {
+func verifyTxsSignature(txs []*Transaction, blockHeight int64) bool {
 
 	//没有需要要验签的交易，直接返回
 	if len(txs) == 0 {
@@ -130,7 +123,7 @@ func verifyTxsSignature(txs []*Transaction) bool {
 	wg.Add(cpuNum)
 	for i := 0; i < cpuNum; i++ {
 		go func() {
-			checksign(done, taskes, c) // HLc
+			checksign(done, taskes, c, blockHeight) // HLc
 			wg.Done()
 		}()
 	}
@@ -168,14 +161,14 @@ type result struct {
 	isok bool
 }
 
-func check(data *Transaction) bool {
-	return data.CheckSign()
+func check(data *Transaction, blockHeight int64) bool {
+	return data.CheckSign(blockHeight)
 }
 
-func checksign(done <-chan struct{}, taskes <-chan *Transaction, c chan<- result) {
+func checksign(done <-chan struct{}, taskes <-chan *Transaction, c chan<- result, blockHeight int64) {
 	for task := range taskes {
 		select {
-		case c <- result{check(task)}:
+		case c <- result{check(task, blockHeight)}:
 		case <-done:
 			return
 		}
@@ -183,21 +176,13 @@ func checksign(done <-chan struct{}, taskes <-chan *Transaction, c chan<- result
 }
 
 // CheckSign 检测签名
-func CheckSign(data []byte, execer string, sign *Signature) bool {
+func CheckSign(data []byte, execer string, sign *Signature, blockHeight int64) bool {
 	//GetDefaultSign: 系统内置钱包，非插件中的签名
-	c, err := crypto.New(GetSignName(execer, int(sign.Ty)))
+	c, err := crypto.New(GetSignName(execer, int(sign.Ty)), crypto.WithNewOptionEnableCheck(blockHeight))
 	if err != nil {
 		return false
 	}
-	pub, err := c.PubKeyFromBytes(sign.Pubkey)
-	if err != nil {
-		return false
-	}
-	signbytes, err := c.SignatureFromBytes(sign.Signature)
-	if err != nil {
-		return false
-	}
-	return pub.VerifyBytes(data, signbytes)
+	return c.Validate(data, sign.Pubkey, sign.Signature) == nil
 }
 
 //FilterParaTxsByTitle 过滤指定title的平行链交易

@@ -137,36 +137,30 @@ func (n *NetScan) connectClosesPeers(peer peer.ID, wg *sync.WaitGroup) {
 	defer wg.Done()
 	ctx, cancel := context.WithTimeout(n.ctx, time.Second*10)
 	defer cancel()
-	peerChan, err := n.discovery.GetDht().GetClosestPeers(ctx, peer.String())
+	peers, err := n.discovery.GetDht().GetClosestPeers(ctx, peer.String())
 	if err != nil {
 		return
 	}
-	for {
-		p, ok := <-peerChan
-		if !ok {
-			return
-		}
+	for _,p:=range peers{
 		n.host.Network().DialPeer(n.ctx, p)
 
 	}
 
 }
+
 func (n *NetScan) fetchConnToPeer(peerID core.PeerID, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	peerchan, err := n.discovery.FindPeersConnectedToPeer(peerID)
-	if err != nil {
-		log.Error("FetchConnToPeer", "err", err)
-		return
-	}
+	//peerchan, err := n.discovery.FindPeersConnectedToPeer(peerID)
+	peers :=n.discovery.FindNearestPeers(peerID,20)
 
-	for {
-		pinfo, ok := <-peerchan
-		if !ok {
-			return
+	for _,p:=range peers {
+		pinfo:= n.host.Peerstore().PeerInfo(p)
+		err := n.host.Connect(n.ctx, pinfo)
+		if err!=nil{
+			log.Error("fetchConnToPeer", "err", err)
 		}
-		err = n.host.Connect(n.ctx, *pinfo)
-		log.Error("fetchConnToPeer", "err", err)
+
 	}
 
 }
@@ -380,7 +374,7 @@ ReConn:
 	}
 
 	defer dprotol.CloseStream(stream)
-	err = dprotol.WriteScanStream(msgReq, stream)
+	err = dprotol.WriteStream(msgReq, stream)
 	if err != nil {
 		if err.Error() == "stream reset" {
 			time.Sleep(time.Second)
@@ -391,7 +385,7 @@ ReConn:
 		}
 		return
 	}
-	err = dprotol.ReadSscanStream(&resp, stream)
+	err = dprotol.ReadStream(&resp, stream)
 	if err != nil {
 		if err.Error() == "stream reset" {
 			if reNum < 10 {

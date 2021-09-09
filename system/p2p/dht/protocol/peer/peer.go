@@ -1,6 +1,7 @@
 package peer
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -8,12 +9,13 @@ import (
 	"github.com/33cn/chain33/common/log/log15"
 	"github.com/33cn/chain33/system/p2p/dht/protocol"
 	"github.com/33cn/chain33/types"
+	kbt "github.com/libp2p/go-libp2p-kbucket"
 )
 
 const (
 	// Deprecated: old version, use peerInfo instead
-	peerInfoOld = "/chain33/peerinfoReq/1.0.0"
-	peerInfo    = "/chain33/peer-info/1.0.0" //老版本
+	peerInfoOld = "/chain33/peerinfoReq/1.0.0" //老版本
+	peerInfo    = "/chain33/peer-info/1.0.0"
 	// Deprecated: old version, use peerVersion instead
 	peerVersionOld = "/chain33/peerVersion/1.0.0"
 	peerVersion    = "/chain33/peer-version/1.0.0"
@@ -24,7 +26,36 @@ const (
 	mempool    = "mempool"
 )
 
+//UnitTime key time value:time.Second
+var UnitTime = map[string]int64{
+	"hour":   3600,
+	"min":    60,
+	"second": 1,
+}
 var log = log15.New("module", "p2p.peer")
+
+//CaculateLifeTime parase time string to time.Duration
+func CaculateLifeTime(timestr string) (time.Duration, error) {
+	var lifetime int64
+	if timestr == "" {
+		return 0, nil
+	}
+	for substr, time := range UnitTime {
+		if strings.HasSuffix(timestr, substr) {
+
+			num := strings.TrimRight(timestr, substr)
+			num = strings.TrimSpace(num)
+			f, err := strconv.ParseFloat(num, 64)
+			if err != nil {
+				return 0, err
+			}
+			lifetime = int64(f * float64(time))
+			break
+		}
+	}
+
+	return time.Duration(lifetime) * time.Second, nil
+}
 
 func init() {
 	protocol.RegisterProtocolInitializer(InitProtocol)
@@ -33,7 +64,6 @@ func init() {
 // Protocol ...
 type Protocol struct {
 	*protocol.P2PEnv
-	refreshing int32
 
 	// "/ip4/{ip}/tcp/{port}"
 	externalAddr string
@@ -83,19 +113,52 @@ func InitProtocol(env *protocol.P2PEnv) {
 	protocol.RegisterEventHandler(types.EventRemoveTopic, p.handleEventRemoveTopic)
 	//发布消息
 	protocol.RegisterEventHandler(types.EventPubTopicMsg, p.handleEventPubMsg)
-
+	//添加节点到黑名单
+	protocol.RegisterEventHandler(types.EventAddBlacklist, p.handleEventAddBlacklist)
+	//删除黑名单的某个节点
+	protocol.RegisterEventHandler(types.EventDelBlacklist, p.handleEventDelBlacklist)
+	//获取当前的黑名单节点列表
+	protocol.RegisterEventHandler(types.EventShowBlacklist, p.handleEventShowBlacklist)
 	go p.detectNodeAddr()
+	go func() {
+		ticker := time.NewTicker(time.Second / 2)
+		defer ticker.Stop()
+		ticker2 := time.NewTicker(time.Minute * 5)
+		defer ticker2.Stop()
+		ticker3 := time.NewTicker(time.Minute * 10)
+		defer ticker3.Stop()
+
+		for {
+			select {
+			case <-p.Ctx.Done():
+				return
+			case <-ticker.C:
+				p.refreshSelf()
+			case <-ticker2.C:
+				peers := p.RoutingTable.NearestPeers(kbt.ConvertPeerID(p.Host.ID()), p.RoutingTable.Size())
+				if len(peers) <= maxPeers {
+					break
+				}
+				p.refreshPeerInfo(peers[maxPeers:])
+
+			case <-ticker3.C:
+				p.checkOutBound(p.PeerInfoManager.Fetch(p.Host.ID()).GetHeader().GetHeight())
+			}
+		}
+	}()
 	go func() {
 		ticker1 := time.NewTicker(time.Second * 10)
 		if p.ChainCfg.IsTestNet() {
 			ticker1 = time.NewTicker(time.Second)
 		}
+		defer ticker1.Stop()
+
 		for {
 			select {
 			case <-p.Ctx.Done():
 				return
 			case <-ticker1.C:
-				p.refreshPeerInfo()
+				p.refreshPeerInfo(p.RoutingTable.NearestPeers(kbt.ConvertPeerID(p.Host.ID()), maxPeers))
 			}
 		}
 	}()

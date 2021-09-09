@@ -243,8 +243,8 @@ func (chain *BlockChain) ProcGetBlockDetailsMsg(requestblock *types.ReqBlocks) (
 func (chain *BlockChain) ProcAddBlockMsg(broadcast bool, blockdetail *types.BlockDetail, pid string) (*types.BlockDetail, error) {
 	beg := types.Now()
 	defer func() {
-		chainlog.Debug("ProcAddBlockMsg", "height", blockdetail.GetBlock().GetHeight(),
-			"txCount", blockdetail.GetBlock().GetHeight(), "recvFrom", pid, "cost", types.Since(beg))
+		chainlog.Info("ProcAddBlockMsg", "height", blockdetail.GetBlock().GetHeight(),
+			"txCount", len(blockdetail.GetBlock().GetTxs()), "recvFrom", pid, "cost", types.Since(beg))
 	}()
 
 	block := blockdetail.Block
@@ -286,8 +286,8 @@ func (chain *BlockChain) ProcAddBlockMsg(broadcast bool, blockdetail *types.Bloc
 }
 
 //getBlockHashes 获取指定height区间对应的blockhashes
-func (chain *BlockChain) getBlockHashes(startheight, endheight int64) types.ReqHashes {
-	var reqHashes types.ReqHashes
+func (chain *BlockChain) getBlockHashes(startheight, endheight int64) *types.ReqHashes {
+	reqHashes := &types.ReqHashes{}
 	for i := startheight; i <= endheight; i++ {
 		hash, err := chain.blockStore.GetBlockHashByHeight(i)
 		if hash == nil || err != nil {

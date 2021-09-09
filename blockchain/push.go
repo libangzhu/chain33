@@ -3,9 +3,11 @@ package blockchain
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +35,8 @@ const (
 	PushBlock       = int32(0)
 	PushBlockHeader = int32(1)
 	PushTxReceipt   = int32(2)
+	PushTxResult    = int32(3)
+	PushEVMEvent    = int32(4)
 )
 
 // CommonStore 通用的store 接口
@@ -100,7 +104,7 @@ type PushClient struct {
 type PushType int32
 
 func (pushType PushType) string() string {
-	return []string{"PushBlock", "PushBlockHeader", "PushTxReceipt", "NotSupported"}[pushType]
+	return []string{"PushBlock", "PushBlockHeader", "PushTxReceipt", "PushTxResult", "NotSupported"}[pushType]
 }
 
 //PostData ...
@@ -289,7 +293,7 @@ func (push *Push) addSubscriber(subscribe *types.PushSubscribeReq) error {
 		return types.ErrInvalidParam
 	}
 
-	if subscribe.Type != PushBlock && subscribe.Type != PushBlockHeader && subscribe.Type != PushTxReceipt {
+	if subscribe.Type < PushBlock || subscribe.Type > PushEVMEvent {
 		chainlog.Error("addSubscriber input type is error", "type", subscribe.Type)
 		return types.ErrInvalidParam
 	}
@@ -553,6 +557,16 @@ func (push *Push) runTask(input *pushNotify) {
 				}
 				continueFailCount = 0
 				lastProcessedseq = updateSeq
+				// 在联盟链情况下, 无新增交易的情况下, 不会完成从新开始同步
+				// 在公链情况下, 需要有新区块才能触发推送,
+				// 所以这里在未同步到最新区块, 需要主动触发同步
+				if lastProcessedseq < lastesBlockSeq {
+					push.mu.Lock()
+					if len(in.seqUpdateChan) == 0 {
+						in.seqUpdateChan <- lastesBlockSeq
+					}
+					push.mu.Unlock()
+				}
 			case <-in.closechan:
 				push.postwg.Done()
 				chainlog.Info("getPushData", "push task closed for subscribe", subscribe.Name)
@@ -579,12 +593,119 @@ func (push *Push) UpdateSeq(seq int64) {
 }
 
 func (push *Push) getPushData(subscribe *types.PushSubscribeReq, startSeq int64, seqCount, maxSize int) ([]byte, int64, error) {
-	if subscribe.Type == PushBlock {
+	switch subscribe.Type {
+	case PushBlock:
 		return push.getBlockSeqs(subscribe.Encode, startSeq, seqCount, maxSize)
-	} else if subscribe.Type == PushBlockHeader {
+	case PushBlockHeader:
 		return push.getHeaderSeqs(subscribe.Encode, startSeq, seqCount, maxSize)
+	case PushTxReceipt:
+		return push.getTxReceipts(subscribe, startSeq, seqCount, maxSize)
+	case PushTxResult:
+		return push.getTxResults(subscribe.Encode, startSeq, seqCount)
+	case PushEVMEvent:
+		return push.getEVMEvent(subscribe, startSeq, seqCount, maxSize)
+	default:
+		return nil, 0, errors.New("wrong subscribe type")
 	}
-	return push.getTxReceipts(subscribe, startSeq, seqCount, maxSize)
+}
+
+func (push *Push) getEVMEvent(subscribe *types.PushSubscribeReq, startSeq int64, seqCount, maxSize int) ([]byte, int64, error) {
+	evmlogs := &types.EVMTxLogsInBlks{}
+	totalSize := 0
+	actualIterCount := 0
+	for i := startSeq; i < startSeq+int64(seqCount); i++ {
+		chainlog.Info("getEVMEvent", "startSeq:", i)
+		seqdata, err := push.sequenceStore.GetBlockSequence(i)
+		if err != nil {
+			return nil, -1, err
+		}
+		detail, _, err := push.sequenceStore.LoadBlockBySequence(i)
+		if err != nil {
+			return nil, -1, err
+		}
+
+		evmLogsPerBlk := &types.EVMTxLogPerBlk{}
+		chainlog.Info("getEVMEvent", "height:", detail.Block.Height, "tx numbers:", len(detail.Block.Txs),
+			"Receipts numbers:", len(detail.Receipts))
+		for txIndex, tx := range detail.Block.Txs {
+			//确认是订阅的交易类型
+			if !strings.Contains(string(tx.Execer), "evm") {
+				continue
+			}
+			var evmAction types.EVMContractAction4Chain33
+			err := types.Decode(tx.Payload, &evmAction)
+			if nil != err {
+				chainlog.Error("getEVMEvent", "Failed to decode EVMContractAction for evm tx with hash:", common.ToHex(tx.Hash()))
+				continue
+			}
+			if subscribe.Contract[evmAction.ContractAddr] {
+				chainlog.Info("getEVMEvent", "txIndex:", txIndex)
+				//因为只有交易执行成功时，才会存证log信息，所以需要事先判断
+				if types.ExecOk != detail.Receipts[txIndex].Ty {
+					continue
+				}
+				//填充log数据
+				evmLogsPerTx := &types.EVMLogsPerTx{}
+				for _, log := range detail.Receipts[txIndex].Logs {
+					//TyLogEVMEventData = 605 这个log类型定义在evm合约内部
+					//只填充event类型的log数据
+					if 605 != log.Ty {
+						continue
+					}
+					var evmLog types.EVMLog
+					err := types.Decode(log.Log, &evmLog)
+					if nil != err {
+						return nil, -1, err
+					}
+					evmLogsPerTx.Logs = append(evmLogsPerTx.Logs, &evmLog)
+				}
+				if nil != evmLogsPerTx.Logs {
+					txAndLogs := &types.EVMTxAndLogs{
+						Tx:        tx,
+						LogsPerTx: evmLogsPerTx,
+					}
+					evmLogsPerBlk.TxAndLogs = append(evmLogsPerBlk.TxAndLogs, txAndLogs)
+				}
+			}
+		}
+		if len(evmLogsPerBlk.TxAndLogs) > 0 {
+			evmLogsPerBlk.Height = detail.Block.Height
+			evmLogsPerBlk.BlockHash = detail.Block.Hash(push.cfg)
+			evmLogsPerBlk.ParentHash = detail.Block.ParentHash
+			evmLogsPerBlk.PreviousHash = []byte{}
+			evmLogsPerBlk.AddDelType = int32(seqdata.Type)
+			evmLogsPerBlk.SeqNum = i
+		}
+		size := types.Size(evmLogsPerBlk)
+		if len(evmLogsPerBlk.TxAndLogs) > 0 && totalSize+size < maxSize {
+			evmlogs.Logs4EVMPerBlk = append(evmlogs.Logs4EVMPerBlk, evmLogsPerBlk)
+			totalSize += size
+			chainlog.Debug("get EVMEvent subscribed for pushing", "Name", subscribe.Name, "contract:", subscribe.Contract,
+				"height=", evmLogsPerBlk.Height)
+		} else if totalSize+size > maxSize {
+			break
+		}
+		actualIterCount++
+	}
+
+	updateSeq := startSeq + int64(actualIterCount) - 1
+	if len(evmlogs.Logs4EVMPerBlk) == 0 {
+		return nil, updateSeq, nil
+	}
+	chainlog.Info("getEVMEvent", "updateSeq", updateSeq, "actualIterCount", actualIterCount)
+
+	var postdata []byte
+	var err error
+	if subscribe.Encode == "json" {
+		postdata, err = types.PBToJSON(evmlogs)
+		if err != nil {
+			return nil, -1, err
+		}
+	} else {
+		postdata = types.Encode(evmlogs)
+	}
+
+	return postdata, updateSeq, nil
 }
 
 func (push *Push) getTxReceipts(subscribe *types.PushSubscribeReq, startSeq int64, seqCount, maxSize int) ([]byte, int64, error) {
@@ -662,6 +783,43 @@ func (push *Push) getBlockDataBySeq(seq int64) (*types.BlockSeq, int, error) {
 		return nil, 0, err
 	}
 	return &types.BlockSeq{Num: seq, Seq: seqdata, Detail: detail}, blockSize, nil
+}
+
+func (push *Push) getTxResults(encode string, seq int64, seqCount int) ([]byte, int64, error) {
+	var txResultSeqs types.TxResultSeqs
+	for i := seq; i < seq+int64(seqCount); i++ {
+		blockSeq, _, err := push.getBlockDataBySeq(i)
+		if err != nil {
+			return nil, -1, err
+		}
+		txResults := types.TxResultPerBlock{
+			Items:      make([]*types.TxHashWithReceiptType, len(blockSeq.Detail.Receipts)),
+			Height:     blockSeq.Detail.Block.Height,
+			BlockHash:  blockSeq.Detail.Block.Hash(push.cfg),
+			ParentHash: blockSeq.Detail.Block.ParentHash,
+			AddDelType: int32(blockSeq.Seq.Type),
+			SeqNum:     blockSeq.Num,
+		}
+		for i := range txResults.Items {
+			txResults.Items[i] = &types.TxHashWithReceiptType{
+				Hash: blockSeq.Detail.Block.Txs[i].Hash(),
+				Ty:   blockSeq.Detail.Receipts[i].Ty,
+			}
+		}
+		txResultSeqs.Items = append(txResultSeqs.Items, &txResults)
+	}
+
+	var postdata []byte
+	var err error
+	if encode == "json" {
+		postdata, err = types.PBToJSON(&txResultSeqs)
+		if err != nil {
+			return nil, -1, err
+		}
+	} else {
+		postdata = types.Encode(&txResultSeqs)
+	}
+	return postdata, txResultSeqs.Items[0].SeqNum + int64(len(txResultSeqs.Items)) - 1, nil
 }
 
 func (push *Push) getBlockSeqs(encode string, seq int64, seqCount, maxSize int) ([]byte, int64, error) {

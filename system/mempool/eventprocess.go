@@ -1,7 +1,11 @@
 package mempool
 
 import (
+	"strings"
+
+	"github.com/33cn/chain33/common"
 	"github.com/33cn/chain33/queue"
+	nty "github.com/33cn/chain33/system/dapp/none/types"
 	"github.com/33cn/chain33/types"
 )
 
@@ -97,6 +101,9 @@ func (mem *Mempool) eventProcess() {
 			mem.eventTxListByHash(msg)
 		case types.EventCheckTxsExist:
 			mem.eventCheckTxsExist(msg)
+		case types.EventAddDelayTx:
+			mem.eventAddDelayTx(msg)
+
 		default:
 		}
 		mlog.Debug("mempool", "cost", types.Since(beg), "msg", msgName)
@@ -155,14 +162,73 @@ func (mem *Mempool) eventTxList(msg *queue.Message) {
 // EventAddBlock 将添加到区块内的交易从mempool中删除
 func (mem *Mempool) eventAddBlock(msg *queue.Message) {
 	block := msg.GetData().(*types.BlockDetail).Block
-	if block.Height > mem.Height() || (block.Height == 0 && mem.Height() == 0) {
+	height := mem.Height()
+	lastHeader := mem.GetHeader()
+	if block.Height > height || (block.Height == 0 && height == 0) {
 		header := &types.Header{}
 		header.BlockTime = block.BlockTime
 		header.Height = block.Height
 		header.StateHash = block.StateHash
 		mem.setHeader(header)
 	}
-	mem.RemoveTxsOfBlock(block)
+	//同步状态等mempool中不存在交易时，不需要执行操作
+	if mem.Size() > 0 {
+		mem.RemoveTxsOfBlock(block)
+		mem.removeExpired()
+	}
+	// 检测是否存在延时存证交易，并将其中的延时交易进行暂存
+	mem.addDelayTx(mem.cache.delayCache, block)
+	// 区块高度增长，推送延时到期的延时交易
+	mem.pushExpiredDelayTx(mem.cache.delayCache, lastHeader.GetBlockTime(),
+		block.GetBlockTime(), block.GetHeight())
+
+}
+
+// add delay tx from new block
+func (mem *Mempool) addDelayTx(cache *delayTxCache, block *types.Block) {
+
+	// resolve commit delay tx type
+	for _, tx := range block.GetTxs() {
+
+		if !strings.Contains(string(tx.Execer), nty.NoneX) {
+			continue
+		}
+
+		action := &nty.NoneAction{}
+		if err := types.Decode(tx.Payload, action); err != nil || action.Ty != nty.TyCommitDelayTxAction ||
+			action.GetCommitDelayTx().GetDelayTx() == nil {
+			continue
+		}
+		commitInfo := action.GetCommitDelayTx()
+		delayTx := &types.DelayTx{}
+		delayTx.Tx = commitInfo.GetDelayTx()
+		delayTx.EndDelayTime = commitInfo.RelativeDelayTime + block.GetBlockTime()
+		if commitInfo.IsBlockHeightDelayTime {
+			delayTx.EndDelayTime = commitInfo.RelativeDelayTime + block.GetHeight()
+		}
+		if err := cache.addDelayTx(delayTx); err != nil {
+			mlog.Error("addDelayTx", "txHash", common.ToHex(tx.Hash()),
+				"delayTxHash", common.ToHex(delayTx.Tx.Hash()), "add delay tx cache error", err)
+		}
+	}
+}
+
+// push expired delay tx to mempool
+func (mem *Mempool) pushExpiredDelayTx(delayCache *delayTxCache, lastBlockTime,
+	currBlockTime, currBlockHeight int64) {
+
+	delayTxList := delayCache.delExpiredTxs(
+		lastBlockTime, currBlockTime, currBlockHeight)
+	if len(delayTxList) == 0 {
+		return
+	}
+
+	// 阻塞时异步发送，避免mempool消息处理死锁, 延时交易属于低频操作，阻塞时协程开销不会很大
+	select {
+	case mem.delayTxListChan <- delayTxList:
+	default:
+		go func() { mem.delayTxListChan <- delayTxList }()
+	}
 }
 
 // EventGetMempoolSize 获取mempool大小
@@ -212,7 +278,7 @@ func (mem *Mempool) eventGetProperFee(msg *queue.Message) {
 
 func (mem *Mempool) checkSign(data *queue.Message) *queue.Message {
 	tx, ok := data.GetData().(types.TxGroup)
-	if ok && tx.CheckSign() {
+	if ok && tx.CheckSign(mem.GetHeader().GetHeight()) {
 		return data
 	}
 	mlog.Error("wrong tx", "err", types.ErrSign)
@@ -244,4 +310,20 @@ func (mem *Mempool) eventCheckTxsExist(msg *queue.Message) {
 		}
 	}
 	msg.Reply(mem.client.NewMessage("", types.EventReply, reply))
+}
+
+// 添加延时交易
+func (mem *Mempool) eventAddDelayTx(msg *queue.Message) {
+
+	err := types.ErrInvalidParam
+	if delayTx, ok := msg.GetData().(*types.DelayTx); ok {
+		err = mem.cache.delayCache.addDelayTx(delayTx)
+	}
+	replyMsg := mem.client.NewMessage("rpc", types.EventReply, nil)
+	if err != nil {
+		replyMsg.Data = &types.Reply{Msg: []byte(err.Error())}
+	} else {
+		replyMsg.Data = &types.Reply{IsOk: true}
+	}
+	msg.Reply(replyMsg)
 }

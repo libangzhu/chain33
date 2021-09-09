@@ -65,7 +65,8 @@ func (p *PeerInfoManager) Fetch(pid peer.ID) *types.Peer {
 		return nil
 	}
 	if info, ok := v.(*peerStoreInfo); ok {
-		if time.Since(info.storeTime) > p.lifetime {
+
+		if time.Since(info.storeTime) > time.Minute*30 {
 			p.peerInfo.Delete(key)
 			return nil
 		}
@@ -131,7 +132,8 @@ func (p *PeerInfoManager) start() {
 func (p *PeerInfoManager) prune() {
 	p.peerInfo.Range(func(key interface{}, value interface{}) bool {
 		info := value.(*peerStoreInfo)
-		if time.Since(info.storeTime) >p.lifetime {
+
+		if time.Since(info.storeTime) > time.Minute*30 {
 			p.peerInfo.Delete(key)
 			return true
 		}

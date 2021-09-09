@@ -53,6 +53,11 @@ func (d Driver) SignatureFromBytes(b []byte) (sig crypto.Signature, err error) {
 	return SignatureEd25519(*sigBytes), nil
 }
 
+// Validate validate msg and signature
+func (d Driver) Validate(msg, pub, sig []byte) error {
+	return crypto.BasicValidation(d, msg, pub, sig)
+}
+
 //PrivKeyEd25519 PrivKey
 type PrivKeyEd25519 [64]byte
 
@@ -64,14 +69,14 @@ func (privKey PrivKeyEd25519) Bytes() []byte {
 }
 
 //Sign 签名
-func (privKey PrivKeyEd25519) Sign(msg []byte) crypto.Signature {
+func (privKey PrivKeyEd25519) Sign(msg []byte, opts ...interface{}) crypto.Signature {
 	privKeyBytes := [64]byte(privKey)
 	signatureBytes := ed25519.Sign(&privKeyBytes, msg)
 	return SignatureEd25519(*signatureBytes)
 }
 
 //PubKey 公钥
-func (privKey PrivKeyEd25519) PubKey() crypto.PubKey {
+func (privKey PrivKeyEd25519) PubKey(opts ...interface{}) crypto.PubKey {
 	privKeyBytes := [64]byte(privKey)
 	return PubKeyEd25519(*ed25519.MakePublicKey(&privKeyBytes))
 }
@@ -163,6 +168,5 @@ const (
 )
 
 func init() {
-	crypto.Register(Name, &Driver{}, false)
-	crypto.RegisterType(Name, ID)
+	crypto.Register(Name, &Driver{}, crypto.WithRegOptionTypeID(ID))
 }

@@ -325,7 +325,7 @@ func testProcCreateNewAccount(t *testing.T, wallet *Wallet) {
 	}
 
 	//通过privkey生成一个pubkey然后换算成对应的addr
-	cr, err := crypto.New(types.GetSignName("", wallet.SignType))
+	cr, err := crypto.New(types.GetSignName("", wallet.SignType), crypto.WithNewOptionEnableCheck(wallet.lastHeader.GetHeight()))
 	require.NoError(t, err)
 
 	Privkey := "0xb94ae286a508e4bb3fbbcb61997822fea6f0a534510597ef8eb60a19d6b219a0"
@@ -352,7 +352,7 @@ func testProcCreateNewAccount(t *testing.T, wallet *Wallet) {
 	for _, acc1 := range accountlist.Wallets {
 		exist := false
 		for _, acc2 := range accs[:10] {
-			if equal(*acc1.Acc, *acc2) {
+			if equal(acc1.Acc, acc2) {
 				exist = true
 				break
 			}
@@ -366,7 +366,7 @@ func testProcCreateNewAccount(t *testing.T, wallet *Wallet) {
 	println("--------------------------")
 }
 
-func equal(acc1 types.Account, acc2 types.Account) bool {
+func equal(acc1, acc2 *types.Account) bool {
 	if acc1.Currency != acc2.Currency {
 		return false
 	}
@@ -386,7 +386,7 @@ func testProcImportPrivKey(t *testing.T, wallet *Wallet) {
 	println("TestProcImportPrivKey begin")
 
 	//生成一个pubkey然后换算成对应的addr
-	cr, err := crypto.New(types.GetSignName("", wallet.SignType))
+	cr, err := crypto.New(types.GetSignName("", wallet.SignType), crypto.WithNewOptionEnableCheck(wallet.lastHeader.GetHeight()))
 	require.NoError(t, err)
 
 	priv, err := cr.GenKey()

@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/33cn/chain33/common/version"
@@ -19,6 +18,7 @@ import (
 )
 
 const diffHeightValue = 512
+const maxPeers = 20
 
 func (p *Protocol) getLocalPeerInfo() *types.Peer {
 	msg := p.QueueClient.NewMessage(mempool, types.EventGetMempoolSize, nil)
@@ -26,7 +26,7 @@ func (p *Protocol) getLocalPeerInfo() *types.Peer {
 	if err != nil {
 		return nil
 	}
-	resp, err := p.QueueClient.WaitTimeout(msg, time.Second*10)
+	resp, err := p.QueueClient.WaitTimeout(msg, time.Second*5)
 	if err != nil {
 		log.Error("getLocalPeerInfo", "mempool WaitTimeout", err)
 		return nil
@@ -39,7 +39,7 @@ func (p *Protocol) getLocalPeerInfo() *types.Peer {
 	if err != nil {
 		return nil
 	}
-	resp, err = p.QueueClient.WaitTimeout(msg, time.Second*10)
+	resp, err = p.QueueClient.WaitTimeout(msg, time.Second)
 	if err != nil {
 		log.Error("getLocalPeerInfo", "blockchain WaitTimeout", err)
 		return nil
@@ -55,13 +55,19 @@ func (p *Protocol) getLocalPeerInfo() *types.Peer {
 	return &localPeer
 }
 
-func (p *Protocol) refreshPeerInfo() {
-	if !atomic.CompareAndSwapInt32(&p.refreshing, 0, 1) {
-		return
+func (p *Protocol) refreshSelf() {
+	selfPeer := p.getLocalPeerInfo()
+	if selfPeer != nil {
+		selfPeer.Self = true
+		p.PeerInfoManager.Refresh(selfPeer)
 	}
-	defer atomic.StoreInt32(&p.refreshing, 0)
+}
+
+func (p *Protocol) refreshPeerInfo(peers []peer.ID) {
 	var wg sync.WaitGroup
-	for _, remoteID := range p.ConnManager.FetchConnPeers() {
+	// 限制最大并发数量为20
+	ch := make(chan struct{}, 20)
+	for _, remoteID := range peers {
 		if p.checkDone() {
 			log.Warn("getPeerInfo", "process", "done+++++++")
 			return
@@ -71,8 +77,12 @@ func (p *Protocol) refreshPeerInfo() {
 		}
 		//修改为并发获取peerinfo信息
 		wg.Add(1)
+		ch <- struct{}{}
 		go func(pid peer.ID) {
-			defer wg.Done()
+			defer func() {
+				<-ch
+				wg.Done()
+			}()
 			pInfo, err := p.queryPeerInfoOld(pid)
 			if err != nil {
 				log.Error("refreshPeerInfo", "error", err, "pid", pid)
@@ -81,16 +91,13 @@ func (p *Protocol) refreshPeerInfo() {
 			p.PeerInfoManager.Refresh(pInfo)
 		}(remoteID)
 	}
-	selfPeer := p.getLocalPeerInfo()
-	if selfPeer != nil {
-		selfPeer.Self = true
-		p.PeerInfoManager.Refresh(selfPeer)
-		p.checkOutBound(selfPeer.GetHeader().GetHeight())
-	}
 	wg.Wait()
 }
 
 func (p *Protocol) checkOutBound(height int64) {
+	if height < diffHeightValue {
+		return
+	}
 	for _, pinfo := range p.PeerInfoManager.FetchAll() {
 		if pinfo.GetHeader().GetHeight()+diffHeightValue < height {
 			pid, err := peer.Decode(pinfo.GetName())
@@ -136,13 +143,15 @@ func (p *Protocol) detectNodeAddr() {
 			time.Sleep(time.Second)
 			continue
 		}
-		//启动后间隔1分钟，以充分获得节点外网地址
+		//启动后间隔10秒钟，以充分获得节点外网地址，稳定后间隔10分钟
 		rangeCount++
-		if rangeCount > 2 {
-			time.Sleep(time.Minute)
+		if rangeCount > 100 {
+			time.Sleep(time.Minute * 10)
+		} else if rangeCount > 2 {
+			time.Sleep(time.Second * 10)
 		}
 		for _, pid := range p.RoutingTable.ListPeers() {
-			if p.containsPublicIP(pid) {
+			if isPublicIP(p.getPublicIP()) && p.containsPublicIP(pid) {
 				continue
 			}
 			err := p.queryVersionOld(pid)
@@ -155,14 +164,15 @@ func (p *Protocol) detectNodeAddr() {
 }
 
 func (p *Protocol) queryPeerInfoOld(pid peer.ID) (*types.Peer, error) {
-	ctx, cancel := context.WithTimeout(p.Ctx, time.Second*3)
+	ctx, cancel := context.WithTimeout(p.Ctx, time.Second*5)
 	defer cancel()
 	stream, err := p.Host.NewStream(ctx, pid, peerInfoOld)
 	if err != nil {
 		log.Error("refreshPeerInfo", "new stream error", err, "peer id", pid)
 		return nil, err
 	}
-	defer protocol.CloseStream(stream)
+	_ = stream.SetDeadline(time.Now().Add(time.Second * 5))
+	defer stream.Close()
 	err = protocol.WriteStream(&types.MessagePeerInfoReq{}, stream)
 	if err != nil {
 		return nil, err
@@ -189,14 +199,15 @@ func (p *Protocol) queryPeerInfoOld(pid peer.ID) (*types.Peer, error) {
 }
 
 func (p *Protocol) queryPeerInfo(pid peer.ID) (*types.Peer, error) {
-	ctx, cancel := context.WithTimeout(p.Ctx, time.Second*3)
+	ctx, cancel := context.WithTimeout(p.Ctx, time.Second*5)
 	defer cancel()
 	stream, err := p.Host.NewStream(ctx, pid, peerInfo)
 	if err != nil {
 		log.Error("refreshPeerInfo", "new stream error", err, "peer id", pid)
 		return nil, err
 	}
-	defer protocol.CloseStream(stream)
+	_ = stream.SetDeadline(time.Now().Add(time.Second * 5))
+	defer stream.Close()
 	var resp types.Peer
 	err = protocol.ReadStream(&resp, stream)
 	if err != nil {
@@ -206,12 +217,15 @@ func (p *Protocol) queryPeerInfo(pid peer.ID) (*types.Peer, error) {
 }
 
 func (p *Protocol) queryVersionOld(pid peer.ID) error {
-	stream, err := p.Host.NewStream(p.Ctx, pid, peerVersionOld)
+	ctx, cancel := context.WithTimeout(p.Ctx, time.Second*5)
+	defer cancel()
+	stream, err := p.Host.NewStream(ctx, pid, peerVersionOld)
 	if err != nil {
 		log.Error("NewStream", "err", err, "remoteID", pid)
 		return err
 	}
-	defer protocol.CloseStream(stream)
+	_ = stream.SetDeadline(time.Now().Add(time.Second * 5))
+	defer stream.Close()
 
 	req := types.MessageP2PVersionReq{
 		Message: &types.P2PVersion{
@@ -249,12 +263,15 @@ func (p *Protocol) queryVersionOld(pid peer.ID) error {
 }
 
 func (p *Protocol) queryVersion(pid peer.ID) error {
-	stream, err := p.Host.NewStream(p.Ctx, pid, peerVersion)
+	ctx, cancel := context.WithTimeout(p.Ctx, time.Second*5)
+	defer cancel()
+	stream, err := p.Host.NewStream(ctx, pid, peerVersion)
 	if err != nil {
 		log.Error("NewStream", "err", err, "remoteID", pid)
 		return err
 	}
-	defer protocol.CloseStream(stream)
+	_ = stream.SetDeadline(time.Now().Add(time.Second * 5))
+	defer stream.Close()
 
 	req := &types.P2PVersion{
 		Version:  p.SubConfig.Channel,

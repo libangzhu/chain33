@@ -95,6 +95,21 @@ func testSendTransactionOk(t *testing.T) {
 	assert.Equal(t, true, reply.IsOk, "reply should be ok")
 }
 
+func TestGrpc_SendTransactionSync(t *testing.T) {
+	var tx types.Transaction
+	reply := &types.Reply{IsOk: true, Msg: tx.Hash()}
+	mockAPI := new(mocks.QueueProtocolAPI)
+	mockAPI.On("SendTx", mock.Anything).Return(reply, nil)
+	mockAPI.On("QueryTx", mock.Anything).Return(&types.TransactionDetail{}, nil)
+
+	g := Grpc{}
+	g.cli.QueueProtocolAPI = mockAPI
+	reply, err := g.SendTransactionSync(getOkCtx(), &tx)
+	assert.Nil(t, err, "the error should be nil")
+	assert.Equal(t, true, reply.IsOk, "reply should be ok")
+	assert.Equal(t, tx.Hash(), reply.Msg)
+}
+
 func TestSendTransaction(t *testing.T) {
 	testSendTransactionOk(t)
 }
@@ -421,7 +436,7 @@ func testGetBlocksOK(t *testing.T) {
 	var details2 types.BlockDetails
 	pb.Decode(data.Msg, &details2)
 	if !proto.Equal(&details, &details2) {
-		assert.Equal(t, details, details2)
+		assert.Equal(t, types.Encode(&details), types.Encode(&details2))
 	}
 }
 
@@ -714,4 +729,27 @@ func TestGrpc_GetParaTxByHeight(t *testing.T) {
 	qapi.On("GetParaTxByHeight", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 	_, err := g.GetParaTxByHeight(getOkCtx(), &pb.ReqParaTxByHeight{})
 	assert.NoError(t, err)
+}
+
+func TestGrpc_GetServerTime(t *testing.T) {
+	_, err := g.GetServerTime(getOkCtx(), nil)
+	assert.NoError(t, err)
+}
+
+func TestGrpc_GetCryptoList(t *testing.T) {
+	qapi.On("GetCryptoList").Return(nil)
+	_, err := g.GetCryptoList(getOkCtx(), nil)
+	assert.NoError(t, err)
+}
+
+func TestGrpc_SendDelayTransaction(t *testing.T) {
+	qapi.On("SendDelayTx", mock.Anything, mock.Anything).Return(nil, nil)
+	_, err := g.SendDelayTransaction(getOkCtx(), nil)
+	assert.NoError(t, err)
+}
+
+func TestGrpc_GetChainConfig(t *testing.T) {
+	cfg, err := g.GetChainConfig(getOkCtx(), nil)
+	assert.NoError(t, err)
+	assert.Equal(t, types.DefaultCoinPrecision, cfg.GetCoinPrecision())
 }

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/33cn/chain33/common/crypto"
+
 	"github.com/33cn/chain33/client"
 	"github.com/33cn/chain33/common/version"
 	"github.com/33cn/chain33/pluginmgr"
@@ -690,7 +692,7 @@ func testGetPeerInfoJSONRPC(t *testing.T, rpc *mockJRPCSystem) {
 }
 
 func testGenSeedJSONRPC(t *testing.T, rpc *mockJRPCSystem) {
-	params := types.GenSeedLang{
+	params := &types.GenSeedLang{
 		Lang: 1,
 	}
 	var res types.ReplySeed
@@ -746,7 +748,7 @@ func testGetHeadersCmdJSONRPC(t *testing.T, rpc *mockJRPCSystem) {
 
 	var res rpctypes.Headers
 	err := rpc.newRPCCtx("Chain33.GetHeaders",
-		params, &res)
+		&params, &res)
 	if err != nil {
 		t.Error("testGetHeadersCmdJSONRPC failed. Error", err)
 	}
@@ -786,7 +788,7 @@ func testGetBlockHashJSONRPC(t *testing.T, rpc *mockJRPCSystem) {
 	}
 	var res rpctypes.ReplyHash
 	err := rpc.newRPCCtx("Chain33.GetBlockHash",
-		params, &res)
+		&params, &res)
 	if err != nil {
 		t.Error("testGetBlockHashJSONRPC failed. Error", err)
 	}
@@ -865,12 +867,12 @@ func testIsSyncGRPC(t *testing.T, rpc *mockGRPCSystem) {
 }
 
 func testVersionGRPC(t *testing.T, rpc *mockGRPCSystem) {
-	var res types.VersionInfo
-	err := rpc.newRPCCtx("Version", &types.ReqNil{}, &res)
+	res := &types.VersionInfo{}
+	err := rpc.newRPCCtx("Version", &types.ReqNil{}, res)
 	if err != nil {
 		t.Error("Call Version Failed.", err)
 	}
-	assert.Equal(t, version.GetVersion(), res.Chain33)
+	assert.Equal(t, version.GetVersion(), rpc.ctx.Res.(*types.VersionInfo).Chain33)
 }
 
 func testDumpPrivkeyGRPC(t *testing.T, rpc *mockGRPCSystem) {
@@ -1279,4 +1281,51 @@ func TestGetParaTxByHeight(t *testing.T) {
 	q := client.QueueProtocol{}
 	_, err := q.GetParaTxByHeight(nil)
 	assert.NotNil(t, err)
+}
+
+func TestQueueProtocol_GetCryptoList(t *testing.T) {
+	q := client.QueueProtocol{}
+	list := q.GetCryptoList()
+	for _, driver := range list.Cryptos {
+		id := int(driver.TypeID)
+		require.Equal(t, crypto.GetType(driver.Name), id)
+		require.Equal(t, crypto.GetName(id), driver.Name)
+	}
+}
+
+func TestQueueProtocol_SendDelayTx(t *testing.T) {
+	q := queue.New("delaytx")
+	defer q.Close()
+	api, err := client.New(q.Client(), nil)
+	require.Nil(t, err)
+	_, err = api.SendDelayTx(&types.DelayTx{}, true)
+	require.Equal(t, types.ErrNilTransaction, err)
+	replyChan := make(chan interface{}, 1)
+	go func() {
+		cli := q.Client()
+		cli.Sub("mempool")
+		for msg := range cli.Recv() {
+			if msg.Ty == types.EventAddDelayTx {
+				replyMsg := cli.NewMessage("rpc", types.EventReply, nil)
+				replyMsg.Data = <-replyChan
+				msg.Reply(replyMsg)
+			}
+		}
+	}()
+
+	replyChan <- &types.ReqNil{}
+	_, err = api.SendDelayTx(&types.DelayTx{Tx: &types.Transaction{}}, true)
+	require.Equal(t, types.ErrTypeAsset, err)
+	errMsg := "errMsg"
+	replyChan <- &types.Reply{Msg: []byte(errMsg)}
+	testDelayTx := &types.DelayTx{Tx: &types.Transaction{Payload: []byte("delaytx")}}
+	_, err = api.SendDelayTx(testDelayTx, true)
+	require.Equal(t, errMsg, err.Error())
+	replyChan <- &types.Reply{IsOk: true}
+	reply, err := api.SendDelayTx(testDelayTx, true)
+	require.Nil(t, err)
+	require.Equal(t, testDelayTx.GetTx().Hash(), reply.GetMsg())
+	reply, err = api.SendDelayTx(testDelayTx, false)
+	require.Nil(t, err)
+	require.Nil(t, reply)
 }

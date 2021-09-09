@@ -1,15 +1,15 @@
 package protocol
 
 import (
-	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
-	core "github.com/libp2p/go-libp2p-core"
+
+	"io"
+
 	"math/rand"
 	"runtime"
 	"time"
-
-	"github.com/libp2p/go-libp2p-core/helpers"
 
 	"github.com/33cn/chain33/common/log/log15"
 	"github.com/33cn/chain33/queue"
@@ -18,6 +18,8 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/network"
 	protobufCodec "github.com/multiformats/go-multicodec/protobuf"
+
+	"github.com/libp2p/go-msgio"
 )
 
 var log = log15.New("module", "p2p.protocol")
@@ -26,8 +28,9 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-// ReadStream reads message from stream.
-func ReadStream(data types.Message, stream network.Stream) error {
+// ReadStreamLegacy read stream
+// Deprecated
+func ReadStreamLegacy(data types.Message, stream network.Stream) error {
 	decoder := protobufCodec.Multicodec(nil).Decoder(stream)
 	err := decoder.Decode(data)
 	if err != nil {
@@ -36,40 +39,66 @@ func ReadStream(data types.Message, stream network.Stream) error {
 	}
 	return nil
 }
-func ReadSscanStream(data types.Message,stream core.Stream)error{
-	stream.SetReadDeadline(time.Now().Add(time.Second*5))
-	decoder:=protobufCodec.Multicodec(nil).Decoder(bufio.NewReader(stream))
-	err:=decoder.Decode(data)
-	if err!=nil{
-		log.Error("ReadScanStream","err",err)
+
+const messageHeaderLen = 17
+
+var (
+	messageHeader = protobufCodec.HeaderMsgio
+)
+
+// ReadStream reads message from stream.
+func ReadStream(data types.Message, stream network.Stream) error {
+
+	// 兼容历史版本header数据,需要优先读取
+	var header [messageHeaderLen]byte
+	_, err := io.ReadFull(stream, header[:])
+	if err != nil || !bytes.Equal(header[:], messageHeader) {
+		log.Error("ReadStream", "pid", stream.Conn().RemotePeer().Pretty(), "protocolID", stream.Protocol(), "read header err", err)
+		return err
+	}
+
+	reader := msgio.NewReaderSize(stream, types.MaxBlockSize)
+	msg, err := reader.ReadMsg()
+	// 内部使用了内存池, 回收内存
+	defer reader.ReleaseMsg(msg)
+	if err != nil {
+		log.Error("ReadStream", "pid", stream.Conn().RemotePeer().Pretty(), "protocolID", stream.Protocol(), "read msg err", err)
+		return err
+	}
+	err = types.Decode(msg, data)
+	if err != nil {
+		log.Error("ReadStream", "pid", stream.Conn().RemotePeer().Pretty(), "protocolID", stream.Protocol(), "decode err", err)
 		return err
 	}
 	return nil
 }
-func WriteScanStream(data types.Message,stream core.Stream)error{
-	stream.SetWriteDeadline(time.Now().Add(time.Second*5))
-	writer:=bufio.NewWriter(stream)
-	enc:=protobufCodec.Multicodec(nil).Encoder(writer)
-	err:=enc.Encode(data)
-	if err != nil {
-		log.Error("WriteStream", "pid", stream.Conn().RemotePeer().Pretty(), "protocolID", stream.Protocol(), "encode err", err)
-		return err
-	}
-	err=writer.Flush()
-	if err!=nil{
-		log.Error("flush","err",err)
-		return  err
-	}
-	return  nil
 
+// WriteStreamLegacy write stream
+// Deprecated
+func WriteStreamLegacy(data types.Message, stream network.Stream) error {
 
-}
-// WriteStream writes message to stream.
-func WriteStream(data types.Message, stream network.Stream) error {
 	enc := protobufCodec.Multicodec(nil).Encoder(stream)
 	err := enc.Encode(data)
 	if err != nil {
 		log.Error("WriteStream", "pid", stream.Conn().RemotePeer().Pretty(), "protocolID", stream.Protocol(), "encode err", err)
+		return err
+	}
+	return nil
+}
+
+// WriteStream writes message to stream.
+func WriteStream(data types.Message, stream network.Stream) error {
+
+	_, err := stream.Write(messageHeader)
+	if err != nil {
+		log.Error("WriteStream", "pid", stream.Conn().RemotePeer().Pretty(), "protocolID", stream.Protocol(), "write header err", err)
+		return err
+	}
+	msg := types.Encode(data)
+	writer := msgio.NewWriter(stream)
+	err = writer.WriteMsg(msg)
+	if err != nil {
+		log.Error("WriteStream", "pid", stream.Conn().RemotePeer().Pretty(), "protocolID", stream.Protocol(), "write msg err", err)
 		return err
 	}
 	return nil
@@ -80,11 +109,13 @@ func CloseStream(stream network.Stream) {
 	if stream == nil {
 		return
 	}
+	_ = stream.CloseWrite()
+	_ = stream.CloseRead()
 	go func() {
-		err := helpers.FullClose(stream)
+		err := AwaitEOF(stream)
 		if err != nil {
 			//just log it because it dose not matter
-			log.Debug("CloseStream", "err", err)
+			log.Debug("CloseStream", "err", err, "protocol ID", stream.Protocol())
 		}
 	}()
 }
@@ -346,4 +377,36 @@ func panicTrace(kb int) []byte {
 	}
 	stack = bytes.TrimRight(stack, "\n")
 	return stack
+}
+
+// EOFTimeout is the maximum amount of time to wait to successfully observe an
+// EOF on the stream. Defaults to 60 seconds.
+var EOFTimeout = time.Second * 60
+
+// ErrExpectedEOF is returned when we read data while expecting an EOF.
+var ErrExpectedEOF = errors.New("read data when expecting EOF")
+
+// AwaitEOF waits for an EOF on the given stream, returning an error if that
+// fails. It waits at most EOFTimeout (defaults to 1 minute) after which it
+// resets the stream.
+func AwaitEOF(s network.Stream) error {
+	// So we don't wait forever
+	_ = s.SetDeadline(time.Now().Add(EOFTimeout))
+
+	// We *have* to observe the EOF. Otherwise, we leak the stream.
+	// Now, technically, we should do this *before*
+	// returning from SendMessage as the message
+	// hasn't really been sent yet until we see the
+	// EOF but we don't actually *know* what
+	// protocol the other side is speaking.
+	n, err := s.Read([]byte{0})
+	if n > 0 || err == nil {
+		_ = s.Reset()
+		return ErrExpectedEOF
+	}
+	if err != io.EOF {
+		_ = s.Reset()
+		return err
+	}
+	return s.Close()
 }

@@ -10,7 +10,10 @@ import (
 	"encoding/json"
 	"reflect"
 	"sort"
+	"sync"
 	"time"
+
+	"github.com/golang/protobuf/proto"
 
 	lru "github.com/hashicorp/golang-lru"
 
@@ -22,7 +25,6 @@ import (
 )
 
 var (
-	bCoins   = []byte("coins")
 	bToken   = []byte("token")
 	withdraw = "withdraw"
 	txCache  *lru.Cache
@@ -106,11 +108,11 @@ func (txgroup *Transactions) Tx() *Transaction {
 	}
 	headtx := txgroup.GetTxs()[0]
 	//不会影响原来的tx
-	copytx := *headtx
+	copytx := CloneTx(headtx)
 	data := Encode(txgroup)
 	//放到header中不影响交易的Hash
 	copytx.Header = data
-	return &copytx
+	return copytx
 }
 
 //GetTxGroup 获取交易组
@@ -128,10 +130,10 @@ func (txgroup *Transactions) SignN(n int, ty int32, priv crypto.PrivKey) error {
 }
 
 //CheckSign 检测交易组的签名
-func (txgroup *Transactions) CheckSign() bool {
+func (txgroup *Transactions) CheckSign(blockHeight int64) bool {
 	txs := txgroup.Txs
 	for i := 0; i < len(txs); i++ {
-		if !txs[i].checkSign() {
+		if !txs[i].checkSign(blockHeight) {
 			return false
 		}
 	}
@@ -384,7 +386,7 @@ func (tx *TransactionCache) GetTxGroup() (*Transactions, error) {
 }
 
 //CheckSign 检测签名
-func (tx *TransactionCache) CheckSign() bool {
+func (tx *TransactionCache) CheckSign(blockHeight int64) bool {
 	if tx.signok == 0 {
 		tx.signok = 2
 		group, err := tx.GetTxGroup()
@@ -393,11 +395,11 @@ func (tx *TransactionCache) CheckSign() bool {
 		}
 		if group == nil {
 			//非group，简单校验签名
-			if ok := tx.checkSign(); ok {
+			if ok := tx.checkSign(blockHeight); ok {
 				tx.signok = 1
 			}
 		} else {
-			if ok := group.CheckSign(); ok {
+			if ok := group.CheckSign(blockHeight); ok {
 				tx.signok = 1
 			}
 		}
@@ -421,14 +423,6 @@ func CacheToTxs(caches []*TransactionCache) (txs []*Transaction) {
 		txs[i] = caches[i].Tx()
 	}
 	return txs
-}
-
-//HashSign hash 不包含签名，用户通过修改签名无法重新发送交易
-func (tx *Transaction) HashSign() []byte {
-	copytx := *tx
-	copytx.Signature = nil
-	data := Encode(&copytx)
-	return common.Sha256(data)
 }
 
 //Tx 交易详情
@@ -474,19 +468,20 @@ func (tx *Transaction) Sign(ty int32, priv crypto.PrivKey) {
 }
 
 //CheckSign tx 有些时候是一个交易组
-func (tx *Transaction) CheckSign() bool {
-	return tx.checkSign()
+func (tx *Transaction) CheckSign(blockHeight int64) bool {
+	return tx.checkSign(blockHeight)
 }
 
 //txgroup 的情况
-func (tx *Transaction) checkSign() bool {
-	copytx := *tx
+func (tx *Transaction) checkSign(blockHeight int64) bool {
+	copytx := CloneTx(tx)
 	copytx.Signature = nil
-	data := Encode(&copytx)
+	data := Encode(copytx)
+	FreeTx(copytx)
 	if tx.GetSignature() == nil {
 		return false
 	}
-	return CheckSign(data, string(tx.Execer), tx.GetSignature())
+	return CheckSign(data, string(tx.Execer), tx.GetSignature(), blockHeight)
 }
 
 //Check 交易检测
@@ -722,8 +717,8 @@ func (tx *Transaction) ActionName() string {
 }
 
 //IsWithdraw 判断交易是withdraw交易，需要做from和to地址的swap，方便上层客户理解
-func (tx *Transaction) IsWithdraw() bool {
-	if bytes.Equal(tx.GetExecer(), bCoins) || bytes.Equal(tx.GetExecer(), bToken) {
+func (tx *Transaction) IsWithdraw(coinExec string) bool {
+	if bytes.Equal(tx.GetExecer(), []byte(coinExec)) || bytes.Equal(tx.GetExecer(), bToken) {
 		if tx.ActionName() == withdraw {
 			return true
 		}
@@ -807,33 +802,70 @@ func TransactionSort(rawtxs []*Transaction) []*Transaction {
 	return txs.GetTxs()
 }
 
+var (
+	// 用于交易结构protobuf编码buffer
+	txProtoBufferPool = &sync.Pool{
+		New: func() interface{} {
+			return proto.NewBuffer(make([]byte, 0, 256))
+		},
+	}
+	// 交易结构内存池
+	txPool = &sync.Pool{
+		New: func() interface{} { return &Transaction{} },
+	}
+)
+
+// NewTx new tx object
+func NewTx() *Transaction {
+	return txPool.Get().(*Transaction)
+}
+
+// FreeTx free tx object
+func FreeTx(txs ...*Transaction) {
+	for _, tx := range txs {
+		tx.Reset()
+		txPool.Put(tx)
+	}
+}
+
 //Hash 交易的hash不包含header的值，引入tx group的概念后，做了修改
 func (tx *Transaction) Hash() []byte {
-	copytx := cloneTx(tx)
+	copytx := CloneTx(tx)
 	copytx.Signature = nil
 	copytx.Header = nil
-	data := Encode(copytx)
-	return common.Sha256(data)
+	buffer := txProtoBufferPool.Get().(*proto.Buffer)
+	data := EncodeWithBuffer(copytx, buffer)
+	FreeTx(copytx)
+	hash := common.Sha256(data)
+	buffer.Reset()
+	txProtoBufferPool.Put(buffer)
+	return hash
 }
 
 //FullHash 交易的fullhash包含交易的签名信息
 func (tx *Transaction) FullHash() []byte {
 	copytx := tx.Clone()
-	data := Encode(copytx)
-	return common.Sha256(data)
+	buffer := txProtoBufferPool.Get().(*proto.Buffer)
+	data := EncodeWithBuffer(copytx, buffer)
+	FreeTx(copytx)
+	hash := common.Sha256(data)
+	buffer.Reset()
+	txProtoBufferPool.Put(buffer)
+	return hash
 }
 
 //TxGroup 交易组的接口，Transactions 和 Transaction 都符合这个接口
 type TxGroup interface {
 	Tx() *Transaction
 	GetTxGroup() (*Transactions, error)
-	CheckSign() bool
+	CheckSign(blockHeight int64) bool
 }
 
+//CloneTx clone tx
 //这里要避免用 tmp := *tx 这样就会读 可能被 proto 其他线程修改的 size 字段
 //proto buffer 字段发生更改之后，一定要修改这里，否则可能引起严重的bug
-func cloneTx(tx *Transaction) *Transaction {
-	copytx := &Transaction{}
+func CloneTx(tx *Transaction) *Transaction {
+	copytx := NewTx()
 	copytx.Execer = tx.Execer
 	copytx.Payload = tx.Payload
 	copytx.Signature = tx.Signature
@@ -853,7 +885,7 @@ func (tx *Transaction) Clone() *Transaction {
 	if tx == nil {
 		return nil
 	}
-	tmp := cloneTx(tx)
+	tmp := CloneTx(tx)
 	tmp.Signature = tx.Signature.Clone()
 	return tmp
 }

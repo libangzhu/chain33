@@ -2,17 +2,24 @@ package peer
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
+
+	"github.com/libp2p/go-libp2p-core/peer"
 
 	"github.com/33cn/chain33/queue"
 	"github.com/33cn/chain33/system/p2p/dht/protocol"
 	"github.com/33cn/chain33/types"
 	"github.com/libp2p/go-libp2p-core/network"
+	kbt "github.com/libp2p/go-libp2p-kbucket"
 	"github.com/multiformats/go-multiaddr"
 )
 
 func (p *Protocol) handleStreamPeerInfo(stream network.Stream) {
 	peerInfo := p.getLocalPeerInfo()
+	if peerInfo == nil {
+		return
+	}
 	err := protocol.WriteStream(peerInfo, stream)
 	if err != nil {
 		log.Error("handleStreamPeerInfo", "WriteStream error", err)
@@ -64,6 +71,9 @@ func (p *Protocol) handleStreamPeerInfoOld(stream network.Stream) {
 	}
 
 	peerInfo := p.getLocalPeerInfo()
+	if peerInfo == nil {
+		return
+	}
 	pInfo := &types.P2PPeerInfo{
 		Addr:           peerInfo.Addr,
 		Port:           peerInfo.Port,
@@ -78,7 +88,7 @@ func (p *Protocol) handleStreamPeerInfoOld(stream network.Stream) {
 		Message: pInfo,
 	}, stream)
 	if err != nil {
-		log.Error("handleStreamPeerInfo", "WriteStream error", err)
+		log.Error("handleStreamPeerInfoOld", "WriteStream error", err)
 		return
 	}
 }
@@ -121,8 +131,19 @@ func (p *Protocol) handleStreamVersionOld(stream network.Stream) {
 }
 
 func (p *Protocol) handleEventPeerInfo(msg *queue.Message) {
-	peers := p.PeerInfoManager.FetchAll()
-	msg.Reply(p.QueueClient.NewMessage("blockchain", types.EventPeerList, &types.PeerList{Peers: peers}))
+	// no more than 20 peers
+	peers := p.RoutingTable.NearestPeers(kbt.ConvertPeerID(p.Host.ID()), maxPeers)
+	var peerList types.PeerList
+	for _, pid := range peers {
+		if info := p.PeerInfoManager.Fetch(pid); info != nil {
+			peerList.Peers = append(peerList.Peers, info)
+		}
+	}
+	// add self at last
+	if info := p.PeerInfoManager.Fetch(p.Host.ID()); info != nil {
+		peerList.Peers = append(peerList.Peers, info)
+	}
+	msg.Reply(p.QueueClient.NewMessage("blockchain", types.EventPeerList, &peerList))
 }
 
 func (p *Protocol) handleEventNetProtocols(msg *queue.Message) {
@@ -160,4 +181,84 @@ func (p *Protocol) handleEventNetInfo(msg *queue.Message) {
 	netinfo.Rateout = p.ConnManager.RateCalculate(netstat.RateOut)
 	netinfo.Ratetotal = p.ConnManager.RateCalculate(netstat.RateOut + netstat.RateIn)
 	msg.Reply(p.QueueClient.NewMessage("rpc", types.EventReplyNetInfo, &netinfo))
+}
+
+//add peerName to blacklist
+func (p *Protocol) handleEventAddBlacklist(msg *queue.Message) {
+	var err error
+	defer func() {
+		if err != nil {
+			msg.Reply(p.QueueClient.NewMessage("rpc", types.EventReply, &types.Reply{IsOk: false, Msg: []byte(err.Error())}))
+		}
+
+	}()
+	blackPeer, ok := msg.GetData().(*types.BlackPeer)
+	if !ok {
+		err = types.ErrInvalidParam
+		return
+	}
+	lifeTime, err := CaculateLifeTime(blackPeer.GetLifetime())
+	if err != nil {
+		err = errors.New("invalid lifetime")
+		return
+	}
+	var timeduration time.Duration
+	if lifeTime == 0 {
+		//default 1 year
+		timeduration = time.Hour * 24 * 365
+	} else {
+		timeduration = lifeTime
+	}
+	//check peerID format
+	var pid peer.ID
+	pid, err = peer.Decode(blackPeer.GetPeerName())
+	if err != nil {
+		return
+	}
+	//close this peer
+	err = p.P2PEnv.Host.Network().ClosePeer(pid)
+	if err != nil {
+		log.Error("handleEventAddBlacklist", "close peer", err)
+	}
+	p.P2PEnv.ConnBlackList.Add(blackPeer.GetPeerName(), timeduration)
+
+	msg.Reply(p.QueueClient.NewMessage("rpc", types.EventReply, &types.Reply{IsOk: true, Msg: []byte("success")}))
+
+}
+
+//delete peerName from blacklist
+func (p *Protocol) handleEventDelBlacklist(msg *queue.Message) {
+	var err error
+	defer func() {
+		if err != nil {
+			msg.Reply(p.QueueClient.NewMessage("rpc", types.EventReply, &types.Reply{IsOk: false, Msg: []byte(err.Error())}))
+		}
+
+	}()
+
+	blackPeer, ok := msg.GetData().(*types.BlackPeer)
+	if !ok {
+		err = types.ErrInvalidParam
+		return
+	}
+	if p.P2PEnv.ConnBlackList.Has(blackPeer.GetPeerName()) {
+		p.P2PEnv.ConnBlackList.Add(blackPeer.GetPeerName(), time.Millisecond)
+		msg.Reply(p.QueueClient.NewMessage("rpc", types.EventReply, &types.Reply{IsOk: true, Msg: []byte("success")}))
+		return
+	}
+	err = errors.New("no this peerName")
+}
+
+//show all peers from blacklist
+func (p *Protocol) handleEventShowBlacklist(msg *queue.Message) {
+	peers := p.P2PEnv.ConnBlackList.List()
+	//添加peer remoteAddr
+	for _, blackPeer := range peers.GetBlackinfo() {
+		info := p.P2PEnv.Host.Peerstore().PeerInfo(peer.ID(blackPeer.GetPeerName()))
+		if len(info.Addrs) > 0 {
+			blackPeer.RemoteAddr = info.Addrs[0].String()
+		}
+	}
+	msg.Reply(p.QueueClient.NewMessage("rpc", types.EventShowBlacklist, peers))
+
 }

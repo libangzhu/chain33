@@ -6,8 +6,11 @@ package rpc
 
 import (
 	"errors"
+	"net/http"
 	"testing"
 	"time"
+
+	"github.com/golang/protobuf/proto"
 
 	"github.com/33cn/chain33/client/mocks"
 	"github.com/33cn/chain33/common"
@@ -35,6 +38,27 @@ func TestCheckIpWhitelist(t *testing.T) {
 	remoteIPWhitelist["0.0.0.0"] = true
 	assert.True(t, checkIPWhitelist(address))
 	assert.True(t, checkIPWhitelist("192.168.3.2"))
+
+}
+
+func TestCheckBasicAuth(t *testing.T) {
+	rpcCfg = new(types.RPC)
+	var r = &http.Request{Header: make(http.Header)}
+	assert.True(t, checkBasicAuth(r))
+	r.SetBasicAuth("1212121", "chain33-mypasswd")
+	assert.True(t, checkBasicAuth(r))
+	rpcCfg.JrpcUserName = "chain33-user"
+	rpcCfg.JrpcUserPasswd = "chain33-mypasswd"
+	r.SetBasicAuth("", "chain33-mypasswd")
+	assert.False(t, checkBasicAuth(r))
+	r.SetBasicAuth("", "")
+	assert.False(t, checkBasicAuth(r))
+	r.SetBasicAuth("chain33-user", "")
+	assert.False(t, checkBasicAuth(r))
+	r.SetBasicAuth("chain33", "1234")
+	assert.False(t, checkBasicAuth(r))
+	r.SetBasicAuth("chain33-user", "chain33-mypasswd")
+	assert.True(t, checkBasicAuth(r))
 
 }
 
@@ -197,7 +221,7 @@ func TestGrpc_Call(t *testing.T) {
 	api.On("GetBlockBySeq", mock.Anything).Return(&types.BlockSeq{}, nil)
 	blockSeq, err := client.GetBlockBySeq(ctx, &types.Int64{Data: 1})
 	assert.Nil(t, err)
-	assert.Equal(t, &types.BlockSeq{}, blockSeq)
+	assert.True(t, proto.Equal(&types.BlockSeq{}, blockSeq))
 
 	server.Close()
 	mock.AssertExpectationsForObjects(t, api)
@@ -235,13 +259,13 @@ func TestCheckFuncList(t *testing.T) {
 	assert.True(t, checkJrpcFuncWhitelist(funcName))
 
 	grpcFuncWhitelist = make(map[string]bool)
-	assert.False(t, checkGrpcFuncWhitelist(funcName))
+	assert.False(t, checkGrpcFuncValidity(funcName))
 	grpcFuncWhitelist["*"] = true
-	assert.True(t, checkGrpcFuncWhitelist(funcName))
+	assert.True(t, checkGrpcFuncValidity(funcName))
 
 	delete(grpcFuncWhitelist, "*")
 	grpcFuncWhitelist[funcName] = true
-	assert.True(t, checkGrpcFuncWhitelist(funcName))
+	assert.True(t, checkGrpcFuncValidity(funcName))
 
 	jrpcFuncBlacklist = make(map[string]bool)
 	assert.False(t, checkJrpcFuncBlacklist(funcName))
@@ -249,8 +273,8 @@ func TestCheckFuncList(t *testing.T) {
 	assert.True(t, checkJrpcFuncBlacklist(funcName))
 
 	grpcFuncBlacklist = make(map[string]bool)
-	assert.False(t, checkGrpcFuncBlacklist(funcName))
+	assert.True(t, checkGrpcFuncValidity(funcName))
 	grpcFuncBlacklist[funcName] = true
-	assert.True(t, checkGrpcFuncBlacklist(funcName))
+	assert.False(t, checkGrpcFuncValidity(funcName))
 
 }

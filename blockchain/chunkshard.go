@@ -31,23 +31,35 @@ const (
 	MaxReqChunkRecord int32 = 100
 )
 
-func (chain *BlockChain) chunkProcessRoutine() {
+func (chain *BlockChain) chunkDeleteRoutine() {
 	defer chain.tickerwg.Done()
-
-	// 1.60s检测一次是否可以删除本地的body数据
-	// 2.10s检测一次是否可以触发归档操作
-
+	// 60s检测一次是否可以删除本地的body数据
 	checkDelTicker := time.NewTicker(time.Minute)
-	checkGenChunkTicker := time.NewTicker(10 * time.Second)
+	defer checkDelTicker.Stop()
+
 	for {
 		select {
 		case <-chain.quit:
 			return
 		case <-checkDelTicker.C:
-			go chain.CheckDeleteBlockBody()
+			chain.CheckDeleteBlockBody()
+		}
+	}
+}
+
+func (chain *BlockChain) chunkGenerateRoutine() {
+	defer chain.tickerwg.Done()
+	// 10s检测一次是否可以触发归档操作
+	checkGenChunkTicker := time.NewTicker(10 * time.Second)
+	defer checkGenChunkTicker.Stop()
+
+	for {
+		select {
+		case <-chain.quit:
+			return
 		case <-checkGenChunkTicker.C:
 			//主动查询当前未归档，然后进行触发
-			go chain.CheckGenChunkNum()
+			chain.CheckGenChunkNum()
 		}
 	}
 }
@@ -80,7 +92,6 @@ func (chain *BlockChain) CheckDeleteBlockBody() {
 		// 保证同一时刻只存在一个该协程
 		return
 	}
-	atomic.StoreInt32(&chain.processingDeleteChunk, 1)
 	defer atomic.StoreInt32(&chain.processingDeleteChunk, 0)
 	const onceDelChunkNum = 100 // 每次walkOverDeleteChunk的最大删除chunk个数
 	var count int64
@@ -109,12 +120,10 @@ func (chain *BlockChain) CheckDeleteBlockBody() {
 	}
 
 	//删除超过100个chunk则进行数据库压缩
-	if atomic.LoadInt64(&chain.deleteChunkCount) >= 100 {
+	if atomic.LoadInt64(&chain.deleteChunkCount) >= onceDelChunkNum {
 		now := time.Now()
-		start := []byte("CHAIN-body-body-")
-		limit := make([]byte, len(start))
-		copy(limit, start)
-		limit[len(limit)-1]++
+		start := []byte("CHAIN-body-body-d-")
+		limit := []byte("CHAIN-body-body-d-" + fmt.Sprintf("%012d", chain.cfg.ChunkblockNum*toDelete))
 		if err := chain.blockStore.db.CompactRange(start, limit); err != nil {
 			chainlog.Error("walkOverDeleteChunk", "CompactRange error", err)
 			return
@@ -236,7 +245,7 @@ func (chain *BlockChain) genChunkBlocks(start, end int64) ([]byte, *types.BlockB
 	var hashs types.ReplyHashes
 	var bodys types.BlockBodys
 	for i := start; i <= end; i++ {
-		detail, err := chain.blockStore.LoadBlockByHeight(i)
+		detail, err := chain.blockStore.LoadBlock(i, nil)
 		if err != nil {
 			return nil, nil, err
 		}

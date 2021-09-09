@@ -53,6 +53,11 @@ func (d Driver) SignatureFromBytes(b []byte) (sig crypto.Signature, err error) {
 	return SignatureSecp256k1(b), nil
 }
 
+// Validate validate msg and signature
+func (d Driver) Validate(msg, pub, sig []byte) error {
+	return crypto.BasicValidation(d, msg, pub, sig)
+}
+
 //PrivKeySecp256k1 PrivKey
 type PrivKeySecp256k1 [32]byte
 
@@ -64,7 +69,7 @@ func (privKey PrivKeySecp256k1) Bytes() []byte {
 }
 
 //Sign 签名
-func (privKey PrivKeySecp256k1) Sign(msg []byte) crypto.Signature {
+func (privKey PrivKeySecp256k1) Sign(msg []byte, opts ...interface{}) crypto.Signature {
 	priv, _ := secp256k1.PrivKeyFromBytes(secp256k1.S256(), privKey[:])
 	sig, err := priv.Sign(crypto.Sha256(msg))
 	if err != nil {
@@ -74,7 +79,7 @@ func (privKey PrivKeySecp256k1) Sign(msg []byte) crypto.Signature {
 }
 
 //PubKey 私钥生成公钥
-func (privKey PrivKeySecp256k1) PubKey() crypto.PubKey {
+func (privKey PrivKeySecp256k1) PubKey(opts ...interface{}) crypto.PubKey {
 	_, pub := secp256k1.PrivKeyFromBytes(secp256k1.S256(), privKey[:])
 	var pubSecp256k1 PubKeySecp256k1
 	copy(pubSecp256k1[:], pub.SerializeCompressed())
@@ -190,6 +195,5 @@ const (
 )
 
 func init() {
-	crypto.Register(Name, &Driver{}, false)
-	crypto.RegisterType(Name, ID)
+	crypto.Register(Name, &Driver{}, crypto.WithRegOptionTypeID(ID))
 }

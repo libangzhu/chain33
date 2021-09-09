@@ -15,7 +15,6 @@ import (
 	"github.com/33cn/chain33/common/address"
 	"github.com/33cn/chain33/common/log/log15"
 	"github.com/33cn/chain33/queue"
-	ety "github.com/33cn/chain33/system/dapp/coins/types"
 	"github.com/33cn/chain33/types"
 )
 
@@ -55,7 +54,7 @@ func (c *channelClient) CreateRawTransaction(param *types.CreateTx) ([]byte, err
 	//未来这个调用可能会被废弃
 	types.AssertConfig(c.QueueProtocolAPI)
 	cfg := c.QueueProtocolAPI.GetConfig()
-	execer := cfg.ExecName(ety.CoinsX)
+	execer := cfg.ExecName(cfg.GetCoinExec())
 	if param.IsToken {
 		execer = cfg.ExecName("token")
 	}
@@ -318,7 +317,7 @@ func (c *channelClient) GetBalance(in *types.ReqBalance) ([]*types.Account, erro
 	// 不填时兼容原来的调用
 	if in.AssetExec == "" || in.AssetSymbol == "" {
 		in.AssetSymbol = "bty"
-		in.AssetExec = "coins"
+		in.AssetExec = c.GetConfig().GetCoinExec()
 		return c.accountdb.GetBalance(c.QueueProtocolAPI, in)
 	}
 
@@ -396,7 +395,7 @@ func (c *channelClient) DecodeRawTransaction(param *types.ReqDecodeRawTransactio
 
 // GetTimeStatus get status of time
 func (c *channelClient) GetTimeStatus() (*types.TimeStatus, error) {
-	ntpTime := common.GetRealTimeRetry(types.NtpHosts, 2)
+	ntpTime := common.GetRealTimeRetry(c.GetConfig().GetModuleConfig().NtpHosts, 2)
 	local := time.Now()
 	if ntpTime.IsZero() {
 		return &types.TimeStatus{NtpTime: "", LocalTime: local.Format("2006-01-02 15:04:05"), Diff: 0}, nil

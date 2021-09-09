@@ -7,6 +7,8 @@ package types
 import (
 	"testing"
 
+	"github.com/33cn/chain33/system/crypto/secp256k1"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -15,7 +17,7 @@ func TestChainConfig(t *testing.T) {
 	cfg.S("a", true)
 	_, err := cfg.G("b")
 	assert.Equal(t, err, ErrNotFound)
-	assert.False(t, cfg.IsEnable("TxHeight"))
+	assert.True(t, cfg.IsEnable("TxHeight"))
 	adata, err := cfg.G("a")
 	assert.Equal(t, err, nil)
 	assert.Equal(t, adata.(bool), true)
@@ -24,6 +26,11 @@ func TestChainConfig(t *testing.T) {
 	assert.Equal(t, cfg.GetMaxTxFee(), int64(1e9))
 	assert.Equal(t, cfg.GetMaxTxFeeRate(), int64(1e7))
 	assert.Equal(t, cfg.GetMinTxFeeRate(), int64(1e5))
+	height, ok := cfg.GetModuleConfig().Crypto.EnableHeight[secp256k1.Name]
+	assert.True(t, ok)
+	_, ok = cfg.GetSubConfig().Crypto[secp256k1.Name]
+	assert.True(t, ok)
+	assert.Equal(t, int64(0), height)
 }
 
 //测试实际的配置文件
@@ -44,7 +51,7 @@ func TestConfInit(t *testing.T) {
 func TestConfigNoInit(t *testing.T) {
 	cfg := NewChain33ConfigNoInit(ReadFile("testdata/chain33.toml"))
 	assert.False(t, cfg.IsEnable("TxHeight"))
-	cfg.EnableCheckFork(false)
+	cfg.DisableCheckFork(true)
 	cfg.chain33CfgInit(cfg.GetModuleConfig())
 	mcfg := cfg.GetModuleConfig()
 	assert.Equal(t, cfg.forks.forks["ForkV16Withdraw"], int64(480000))
@@ -56,7 +63,7 @@ func TestConfigNoInit(t *testing.T) {
 	// tx fee config
 	assert.Equal(t, int64(1e8), cfg.GetMaxTxFee())
 	assert.Equal(t, int64(1e6), cfg.GetMaxTxFeeRate())
-	assert.Equal(t, int64(1e4), cfg.GetMinTxFeeRate())
+	assert.Equal(t, int64(1e5), cfg.GetMinTxFeeRate())
 	cfg.SetTxFeeConfig(1e9, 1e9, 1e9)
 	assert.True(t, int64(1e9) == cfg.GetMinTxFeeRate() && cfg.GetMaxTxFeeRate() == cfg.GetMaxTxFee())
 }
@@ -82,4 +89,32 @@ func TestGetParaExecTitleName(t *testing.T) {
 	title, exist = GetParaExecTitleName("user.p.guodux.token")
 	assert.Equal(t, true, exist)
 	assert.Equal(t, "user.p.guodux.", title)
+}
+
+func TestCheckPrecision(t *testing.T) {
+	a := int64(11)
+	r := checkPrecision(a)
+	assert.Equal(t, false, r)
+
+	a = 10
+	r = checkPrecision(a)
+	assert.Equal(t, true, r)
+
+	a = 1
+	r = checkPrecision(a)
+	assert.Equal(t, true, r)
+
+	a = 1e8
+	r = checkPrecision(a)
+	assert.Equal(t, true, r)
+
+	//大于1e8也允许
+	a = 1000000000
+	r = checkPrecision(a)
+	assert.Equal(t, true, r)
+
+	a = 110000000
+	r = checkPrecision(a)
+	assert.Equal(t, false, r)
+
 }

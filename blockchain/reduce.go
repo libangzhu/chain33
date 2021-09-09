@@ -84,7 +84,7 @@ func (chain *BlockChain) walkOver(start, end int64, sync bool, fn func(batch dbm
 
 // reduceBodyInit 将body中的receipt进行精简；将TxHashPerfix为key的TxResult中的receipt和tx字段进行精简
 func (chain *BlockChain) reduceBodyInit(batch dbm.Batch, height int64) {
-	blockDetail, err := chain.blockStore.LoadBlockByHeight(height)
+	blockDetail, err := chain.blockStore.LoadBlock(height, nil)
 	if err == nil {
 		cfg := chain.client.GetConfig()
 		kvs, err := delBlockReceiptTable(chain.blockStore.db, height, blockDetail.Block.Hash(cfg))
@@ -133,18 +133,18 @@ func (chain *BlockChain) deleteTx(batch dbm.Batch, block *types.Block) {
 
 // reduceReceipts 精简receipts
 func reduceReceipts(src *types.BlockBody) []*types.ReceiptData {
-	dst := src.Clone()
-	for i := 0; i < len(dst.Receipts); i++ {
-		for j := 0; j < len(dst.Receipts[i].Logs); j++ {
-			if dst.Receipts[i].Logs[j] != nil {
-				if dst.Receipts[i].Logs[j].Ty == types.TyLogErr { // 为了匹配界面显示
+	receipts := types.CloneReceipts(src.Receipts)
+	for i := 0; i < len(receipts); i++ {
+		for j := 0; j < len(receipts[i].Logs); j++ {
+			if receipts[i].Logs[j] != nil {
+				if receipts[i].Logs[j].Ty == types.TyLogErr { // 为了匹配界面显示
 					continue
 				}
-				dst.Receipts[i].Logs[j].Log = nil
+				receipts[i].Logs[j].Log = nil
 			}
 		}
 	}
-	return dst.Receipts
+	return receipts
 }
 
 // ReduceLocalDB 实时精简localdb
@@ -160,6 +160,8 @@ func (chain *BlockChain) ReduceLocalDB() {
 	}
 	// 10s检测一次是否可以进行reduce localdb
 	checkTicker := time.NewTicker(10 * time.Second)
+	defer checkTicker.Stop()
+
 	for {
 		select {
 		case <-chain.quit:
