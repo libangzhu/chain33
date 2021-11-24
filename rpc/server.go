@@ -207,6 +207,8 @@ func NewGRpcServer(c queue.Client, api client.QueueProtocolAPI) *Grpcserver {
 	server := grpc.NewServer(opts...)
 	s.s = server
 	types.RegisterChain33Server(server, s.grpc)
+	//监听RPC事件
+
 	return s
 }
 
@@ -235,7 +237,7 @@ type RPC struct {
 	cfg  *types.RPC
 	gapi *Grpcserver
 	japi *JSONRPCServer
-	c    queue.Client
+	cli    queue.Client
 	api  client.QueueProtocolAPI
 }
 
@@ -271,9 +273,11 @@ func (r *RPC) SetQueueClient(c queue.Client) {
 	japi := NewJSONRPCServer(c, r.api)
 	r.gapi = gapi
 	r.japi = japi
-	r.c = c
+	r.cli = c
 	//注册系统rpc
 	pluginmgr.AddRPC(r)
+
+
 	r.Listen()
 }
 
@@ -283,7 +287,6 @@ func (r *RPC) SetQueueClientNoListen(c queue.Client) {
 	japi := NewJSONRPCServer(c, r.api)
 	r.gapi = gapi
 	r.japi = japi
-	r.c = c
 }
 
 // Listen rpc listen

@@ -495,6 +495,30 @@ func TestChain33_SendTransaction(t *testing.T) {
 	mock.AssertExpectationsForObjects(t, api)
 }
 
+func TestChain33_SendTransactions(t *testing.T) {
+
+	api := new(mocks.QueueProtocolAPI)
+	cfg := types.NewChain33Config(types.GetDefaultCfgstring())
+	api.On("GetConfig", mock.Anything).Return(cfg)
+
+	api.On("SendTx", mock.Anything).Return(&types.Reply{
+		IsOk: true,
+		Msg:  []byte("test"),
+	}, nil)
+	testChain33 := newTestChain33(api)
+	var testResult interface{}
+	txCount := 10
+	data := rpctypes.ReqStrings{
+		Datas: make([]string, txCount),
+	}
+	err := testChain33.SendTransactions(data, &testResult)
+	require.Nil(t, err)
+	reply, ok := testResult.(rpctypes.ReplyHashes)
+	require.True(t, ok)
+	require.Equal(t, txCount, len(reply.Hashes))
+	require.Equal(t, common.ToHex([]byte("test")), reply.Hashes[0])
+}
+
 func TestChain33_SendTransactionSync(t *testing.T) {
 	api := new(mocks.QueueProtocolAPI)
 	cfg := types.NewChain33Config(types.GetDefaultCfgstring())
@@ -1817,6 +1841,16 @@ func TestChain33_SendDelayTransaction(t *testing.T) {
 	require.Equal(t, common.ToHex(testData), result.(string))
 }
 
+func TestChain33_WalletRecoverScript(t *testing.T) {
+
+	chain33 := &Chain33{cli: channelClient{}}
+	var result interface{}
+	err := chain33.GetWalletRecoverAddress(nil, &result)
+	require.Equal(t, types.ErrInvalidParam, err)
+	err = chain33.SignWalletRecoverTx(nil, &result)
+	require.Equal(t, types.ErrInvalidParam, err)
+}
+
 func TestChain33_GetChainConfig(t *testing.T) {
 	cfg := types.NewChain33Config(types.GetDefaultCfgstring())
 	api := new(mocks.QueueProtocolAPI)
@@ -1895,4 +1929,32 @@ func TestChain33_ShowBlacklist(t *testing.T) {
 	_, ok := testResult.([]*types.BlackInfo)
 	assert.True(t, ok)
 
+}
+
+func TestChain33_DialPeer(t *testing.T) {
+	cfg := types.NewChain33Config(types.GetDefaultCfgstring())
+	api := new(mocks.QueueProtocolAPI)
+	api.On("GetConfig", mock.Anything).Return(cfg)
+	expected := &types.Reply{}
+	api.On("DialPeer", mock.Anything).Return(expected, nil)
+	testChain33 := newTestChain33(api)
+	var testResult interface{}
+	err := testChain33.DialPeer(&types.SetPeer{}, &testResult)
+	assert.Nil(t, err)
+	_, ok := testResult.(*rpctypes.Reply)
+	assert.True(t, ok)
+}
+
+func TestChain33_ClosePeer(t *testing.T) {
+	cfg := types.NewChain33Config(types.GetDefaultCfgstring())
+	api := new(mocks.QueueProtocolAPI)
+	api.On("GetConfig", mock.Anything).Return(cfg)
+	expected := &types.Reply{}
+	api.On("ClosePeer", mock.Anything).Return(expected, nil)
+	testChain33 := newTestChain33(api)
+	var testResult interface{}
+	err := testChain33.ClosePeer(&types.SetPeer{}, &testResult)
+	assert.Nil(t, err)
+	_, ok := testResult.(*rpctypes.Reply)
+	assert.True(t, ok)
 }

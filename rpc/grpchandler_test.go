@@ -7,7 +7,11 @@ package rpc
 import (
 	"encoding/hex"
 	"fmt"
+	"google.golang.org/grpc"
+	"math/rand"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"strings"
 
@@ -748,8 +752,86 @@ func TestGrpc_SendDelayTransaction(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestGrpc_WalletRecoverScript(t *testing.T) {
+	_, err := g.GetWalletRecoverAddress(getOkCtx(), nil)
+	assert.Equal(t, types.ErrInvalidParam, err)
+	_, err = g.SignWalletRecoverTx(getOkCtx(), nil)
+	assert.Equal(t, types.ErrInvalidParam, err)
+}
+
 func TestGrpc_GetChainConfig(t *testing.T) {
 	cfg, err := g.GetChainConfig(getOkCtx(), nil)
 	assert.NoError(t, err)
 	assert.Equal(t, types.DefaultCoinPrecision, cfg.GetCoinPrecision())
+}
+
+func TestGrpc_SendTransactions(t *testing.T) {
+
+	cfg := types.NewChain33Config(types.GetDefaultCfgstring())
+	//Init(cfg)
+	g := Grpc{}
+	qapi = new(mocks.QueueProtocolAPI)
+	qapi.On("GetConfig", mock.Anything).Return(cfg)
+	g.cli.QueueProtocolAPI = qapi
+	txCount := 10
+	in := &types.Transactions{Txs: make([]*types.Transaction, txCount)}
+	testMsg := []byte("test")
+	var testTx *types.Transaction
+	qapi.On("SendTx", testTx).Return(&types.Reply{IsOk: true, Msg: testMsg}, types.ErrInvalidParam)
+	testTx = &types.Transaction{}
+	qapi.On("SendTx", testTx).Return(&types.Reply{IsOk: true, Msg: testMsg}, nil)
+	in.Txs[txCount-1] = testTx
+	reply, err := g.SendTransactions(getOkCtx(), in)
+	require.Nil(t, err)
+	require.Equal(t, txCount, len(reply.GetReplyList()))
+	require.Equal(t, types.ErrInvalidParam.Error(), string(reply.GetReplyList()[0].Msg))
+	require.False(t, reply.GetReplyList()[0].IsOk)
+
+	require.Equal(t, testMsg, reply.GetReplyList()[txCount-1].Msg)
+	require.True(t, reply.GetReplyList()[txCount-1].IsOk)
+}
+
+
+
+//构造，签名，发送
+func TestGrpc_CreateRawTransaction2(t *testing.T){
+	con,err:= grpc.Dial("139.9.219.183:8802",grpc.WithInsecure())
+	if err!=nil{
+		panic(err)
+	}
+
+	gcli:= types.NewChain33Client(con)
+	ctx:=context.Background()
+	var txparam pb.CreateTx
+	txparam.Amount=1e9
+	txparam.Fee=1e5
+	txparam.Execer="coins"
+	txparam.To="16htvcBNSEA7fZhAdLJphDwQRQJaHpyHTp"
+	unsignedTx,err:=gcli.CreateRawTransaction(ctx,&txparam)
+	if err!=nil{
+		panic(err)
+	}
+	txHex:=common.ToHex(unsignedTx.GetData())
+	t.Log("tx:",txHex)
+	var key [32]byte
+	rand.Read(key[:])
+	t.Log("privKey:",common.ToHex(key[:]))
+	signedTx,err:= gcli.SignRawTx(ctx,&pb.ReqSignRawTx{Expire: "100m",TxHex:txHex,Privkey: common.ToHex(key[:]),Fee: 2e5})
+	if err!=nil{
+		panic(err)
+	}
+
+	t.Log("signedtx:",signedTx.TxHex)
+	txBytes,err:=common.FromHex(signedTx.GetTxHex())
+	if err!=nil{
+		panic(err)
+	}
+
+	var tx pb.Transaction
+	types.Decode(txBytes,&tx)
+	reply,err:= gcli.SendTransactions(ctx,&pb.Transactions{Txs:[]*pb.Transaction{&tx}})
+	if err!=nil{
+		panic(err)
+	}
+	t.Log("reply:",string(reply.GetReplyList()[0].GetMsg()))
 }

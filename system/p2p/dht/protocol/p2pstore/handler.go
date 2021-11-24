@@ -305,7 +305,7 @@ func (p *Protocol) handleStreamFetchChunk(stream network.Stream) {
 	atomic.AddInt64(&p.concurrency, 1)
 	defer atomic.AddInt64(&p.concurrency, -1)
 	//分片节点模式,检查本地是否存在
-	bodys, err := p.getChunkBlock(param)
+	bodys, err := p.loadChunk(param)
 	if err != nil {
 		res.Error = err.Error()
 		return
@@ -398,7 +398,7 @@ func (p *Protocol) handleEventNotifyStoreChunk(m *queue.Message) {
 	//如果本节点是扩展路由表中距离该chunk最近的 `Percentage` 节点之一，则保存数据；否则不需要保存数据
 	extendRoutingTable := p.getExtendRoutingTable()
 	pids := extendRoutingTable.NearestPeers(genDHTID(req.ChunkHash), extendRoutingTable.Size())
-	if len(pids) > 0 && kb.Closer(pids[len(pids)*p.SubConfig.Percentage/100], p.Host.ID(), genChunkNameSpaceKey(req.ChunkHash)) {
+	if len(pids) > 0 && kb.Closer(pids[(len(pids)-1)*p.SubConfig.Percentage/100], p.Host.ID(), genChunkNameSpaceKey(req.ChunkHash)) {
 		return
 	}
 	log.Info("handleEventNotifyStoreChunk", "peers count", len(pids), "chunk hash", hex.EncodeToString(req.ChunkHash), "start", req.Start, "end", req.End)
@@ -409,44 +409,18 @@ func (p *Protocol) handleEventNotifyStoreChunk(m *queue.Message) {
 
 func (p *Protocol) handleEventGetChunkBlock(m *queue.Message) {
 	req := m.GetData().(*types.ChunkInfoMsg)
-	bodys, _, err := p.getChunk(req)
+	var blocks *types.Blocks
+	var err error
+	defer func() {
+		m.Reply(p.QueueClient.NewMessage("", 0, &types.Reply{IsOk: err == nil}))
+	}()
+	blocks, err = p.getBlocks(req)
 	if err != nil {
-		log.Error("GetChunkBlock", "chunk hash", hex.EncodeToString(req.ChunkHash), "start", req.Start, "end", req.End, "error", err)
 		return
 	}
-	headers, _ := p.getHeaders(&types.ReqBlocks{Start: req.Start, End: req.End})
-	if headers == nil {
-		log.Error("GetBlockHeader", "error", types2.ErrNotFound)
-		return
-	}
-	if len(headers.Items) != len(bodys.Items) {
-		log.Error("GetBlockHeader", "error", types2.ErrLength, "header length", len(headers.Items), "body length", len(bodys.Items), "start", req.Start, "end", req.End)
-		return
-	}
-
-	var blockList []*types.Block
-	for index := range bodys.Items {
-		body := bodys.Items[index]
-		header := headers.Items[index]
-		block := &types.Block{
-			Version:    header.Version,
-			ParentHash: header.ParentHash,
-			TxHash:     header.TxHash,
-			StateHash:  header.StateHash,
-			Height:     header.Height,
-			BlockTime:  header.BlockTime,
-			Difficulty: header.Difficulty,
-			MainHash:   body.MainHash,
-			MainHeight: body.MainHeight,
-			Signature:  header.Signature,
-			Txs:        body.Txs,
-		}
-		blockList = append(blockList, block)
-	}
-	msg := p.QueueClient.NewMessage("blockchain", types.EventAddChunkBlock, &types.Blocks{Items: blockList})
+	msg := p.QueueClient.NewMessage("blockchain", types.EventAddChunkBlock, blocks)
 	err = p.QueueClient.Send(msg, false)
 	if err != nil {
-		log.Error("EventGetChunkBlock", "reply message error", err)
 		return
 	}
 	log.Info("GetChunkBlock", "chunk hash", hex.EncodeToString(req.ChunkHash), "start", req.Start, "end", req.End)

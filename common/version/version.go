@@ -5,9 +5,9 @@
 // Package version 软件版本号
 package version
 
-const version = "1.65.2"
+const version = "1.65.4"
 
-//var
+//var version key
 var (
 	WalletVerKey     = []byte("WalletVerKey")
 	BlockChainVerKey = []byte("BlockChainVerKey")
@@ -18,6 +18,7 @@ var (
 	storeversion     = "1.0.0"
 	appversion       = "1.0.0"
 	GitCommit        string
+	BuildTime        string
 )
 
 //GetLocalDBKeyList 获取本地key列表

@@ -10,7 +10,7 @@ import (
 
 var log = logger.New("module", p2pty.DHTTypeName)
 var (
-	path       = flag.String("p", "./data", "scan data path")
+	path       = flag.String("p", "./datadir", "scan data path")
 	gossipPath = flag.String("gop", "", "gossip data path")
 	port       = flag.Int("port", 8333, "listen port")
 )

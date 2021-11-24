@@ -14,6 +14,7 @@ var (
 	destpath   = flag.String("p", "", "scan file path")
 	gossippath = flag.String("gp", "", "scan file path")
 	chainver =flag.String("v","","chain33 version")
+	commitId=flag.String("id","","commit id")
 )
 
 var waithChan chan bool

@@ -325,7 +325,7 @@ func (chain *BlockChain) CalcSafetyChunkInfo(height int64) (chunkNum, start, end
 }
 
 func (chain *BlockChain) calcSafetyChunkHeight(height int64) int64 {
-	return height - MaxRollBlockNum - chain.cfg.ChunkblockNum
+	return height - MaxRollBlockNum - chain.cfg.ChunkblockNum - chain.cfg.ReservedBlockNum
 }
 
 // CalcChunkInfo 主要用于计算验证

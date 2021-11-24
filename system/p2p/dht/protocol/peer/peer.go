@@ -9,7 +9,6 @@ import (
 	"github.com/33cn/chain33/common/log/log15"
 	"github.com/33cn/chain33/system/p2p/dht/protocol"
 	"github.com/33cn/chain33/types"
-	kbt "github.com/libp2p/go-libp2p-kbucket"
 )
 
 const (
@@ -33,6 +32,7 @@ var UnitTime = map[string]int64{
 	"second": 1,
 }
 var log = log15.New("module", "p2p.peer")
+var processStart = time.Now()
 
 //CaculateLifeTime parase time string to time.Duration
 func CaculateLifeTime(timestr string) (time.Duration, error) {
@@ -71,6 +71,8 @@ type Protocol struct {
 
 	topicMutex  sync.RWMutex
 	topicModule sync.Map
+	latestBlock sync.Map
+	blocked     int32
 }
 
 // InitProtocol init protocol
@@ -101,6 +103,8 @@ func InitProtocol(env *protocol.P2PEnv) {
 	// Deprecated: old version, use peerVersion instead
 	protocol.RegisterStreamHandler(p.Host, peerVersionOld, p.handleStreamVersionOld)
 	protocol.RegisterStreamHandler(p.Host, peerVersion, p.handleStreamVersion)
+	//统计信息
+	protocol.RegisterStreamHandler(p.Host, statisticalInfo, p.handlerStreamStatistical)
 	protocol.RegisterEventHandler(types.EventPeerInfo, p.handleEventPeerInfo)
 	protocol.RegisterEventHandler(types.EventGetNetInfo, p.handleEventNetInfo)
 	protocol.RegisterEventHandler(types.EventNetProtocols, p.handleEventNetProtocols)
@@ -119,7 +123,12 @@ func InitProtocol(env *protocol.P2PEnv) {
 	protocol.RegisterEventHandler(types.EventDelBlacklist, p.handleEventDelBlacklist)
 	//获取当前的黑名单节点列表
 	protocol.RegisterEventHandler(types.EventShowBlacklist, p.handleEventShowBlacklist)
+	//连接指定的节点
+	protocol.RegisterEventHandler(types.EventDialPeer, p.handleEventDialPeer)
+	//关闭指定的节点
+	protocol.RegisterEventHandler(types.EventClosePeer, p.handleEventClosePeer)
 	go p.detectNodeAddr()
+	go p.checkBlocked()
 	go func() {
 		ticker := time.NewTicker(time.Second / 2)
 		defer ticker.Stop()
@@ -135,7 +144,7 @@ func InitProtocol(env *protocol.P2PEnv) {
 			case <-ticker.C:
 				p.refreshSelf()
 			case <-ticker2.C:
-				peers := p.RoutingTable.NearestPeers(kbt.ConvertPeerID(p.Host.ID()), p.RoutingTable.Size())
+				peers := p.RoutingTable.ListPeers()
 				if len(peers) <= maxPeers {
 					break
 				}
@@ -158,7 +167,11 @@ func InitProtocol(env *protocol.P2PEnv) {
 			case <-p.Ctx.Done():
 				return
 			case <-ticker1.C:
-				p.refreshPeerInfo(p.RoutingTable.NearestPeers(kbt.ConvertPeerID(p.Host.ID()), maxPeers))
+				peers := p.RoutingTable.ListPeers()
+				if len(peers) > maxPeers {
+					peers = peers[:maxPeers]
+				}
+				p.refreshPeerInfo(peers)
 			}
 		}
 	}()

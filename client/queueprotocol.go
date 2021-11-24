@@ -122,7 +122,6 @@ func (q *QueueProtocol) SendTx(param *types.Transaction) (*types.Reply, error) {
 	}
 	msg, err := q.send(mempoolKey, types.EventTx, param)
 	if err != nil {
-		log.Error("SendTx", "Error", err.Error())
 		return nil, err
 	}
 	reply, ok := msg.GetData().(*types.Reply)
@@ -1136,6 +1135,36 @@ func (q *QueueProtocol) ShowBlacklist(req *types.ReqNil) (*types.Blacklist, erro
 		return reply, nil
 	}
 
+	return nil, types.ErrInvalidParam
+
+}
+
+//DialPeer  dial the the specified peer
+func (q *QueueProtocol) DialPeer(req *types.SetPeer) (*types.Reply, error) {
+	msg, err := q.send(p2pKey, types.EventDialPeer, req)
+	if err != nil {
+		log.Error("DialPeer", "Error", err.Error())
+		return nil, err
+	}
+
+	if reply, ok := msg.GetData().(*types.Reply); ok {
+		return reply, nil
+	}
+	return nil, types.ErrInvalidParam
+
+}
+
+//ClosePeer close the specified peer
+func (q *QueueProtocol) ClosePeer(req *types.SetPeer) (*types.Reply, error) {
+	msg, err := q.send(p2pKey, types.EventClosePeer, req)
+	if err != nil {
+		log.Error("ClosePeer", "Error", err.Error())
+		return nil, err
+	}
+
+	if reply, ok := msg.GetData().(*types.Reply); ok {
+		return reply, nil
+	}
 	return nil, types.ErrInvalidParam
 
 }

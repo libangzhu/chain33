@@ -131,6 +131,22 @@ func (c *Chain33) SendTransaction(in rpctypes.RawParm, result *interface{}) erro
 	return err
 }
 
+// SendTransactions send tx batch
+func (c *Chain33) SendTransactions(in rpctypes.ReqStrings, result *interface{}) error {
+	reply := rpctypes.ReplyHashes{Hashes: make([]string, 0, len(in.Datas))}
+	var err error
+	for _, data := range in.Datas {
+		var txHash interface{}
+		err = c.SendTransaction(rpctypes.RawParm{Data: data}, &txHash)
+		if err != nil {
+			break
+		}
+		reply.Hashes = append(reply.Hashes, txHash.(string))
+	}
+	*result = reply
+	return err
+}
+
 // SendTransactionSync send transaction and wait reply
 func (c *Chain33) SendTransactionSync(in rpctypes.RawParm, result *interface{}) error {
 	err := c.SendTransaction(in, result)
@@ -647,6 +663,9 @@ func (c *Chain33) GetPeerInfo(in *types.P2PGetPeerReq, result *interface{}) erro
 			pr.Version = peer.GetVersion()
 			pr.LocalDBVersion = peer.GetLocalDBVersion()
 			pr.StoreDBVersion = peer.GetStoreDBVersion()
+			pr.RunningTime = peer.GetRunningTime()
+			pr.FullNode = peer.GetFullNode()
+			pr.Blocked = peer.GetBlocked()
 			peerlist.Peers = append(peerlist.Peers, &pr)
 
 		}
@@ -1587,6 +1606,22 @@ func (c *Chain33) SendDelayTransaction(in *types.ReqString, result *interface{})
 	return err
 }
 
+// GetWalletRecoverAddress get wallet recover chain33 addr
+func (c *Chain33) GetWalletRecoverAddress(req *types.ReqGetWalletRecoverAddr, result *interface{}) error {
+
+	reply, err := c.cli.GetWalletRecoverAddr(req)
+	*result = reply.GetData()
+	return err
+}
+
+// SignWalletRecoverTx sign wallet recover transaction
+func (c *Chain33) SignWalletRecoverTx(req *types.ReqSignWalletRecoverTx, result *interface{}) error {
+
+	reply, err := c.cli.SignWalletRecoverTx(req)
+	*result = reply.GetTxHex()
+	return err
+}
+
 // GetChainConfig 获取chain config 参数
 func (c *Chain33) GetChainConfig(in *types.ReqNil, result *interface{}) error {
 	cfg := c.cli.GetConfig()
@@ -1643,5 +1678,30 @@ func (c *Chain33) ShowBlacklist(in *types.ReqNil, result *interface{}) error {
 
 	*result = reply.GetBlackinfo()
 	return nil
+}
 
+//DialPeer dial the specified peer
+func (c *Chain33) DialPeer(in *types.SetPeer, result *interface{}) error {
+	reply, err := c.cli.DialPeer(in)
+	if err != nil {
+		return err
+	}
+	var resp rpctypes.Reply
+	resp.IsOk = reply.IsOk
+	resp.Msg = string(reply.GetMsg())
+	*result = &resp
+	return nil
+}
+
+//ClosePeer close the specified peer
+func (c *Chain33) ClosePeer(in *types.SetPeer, result *interface{}) error {
+	reply, err := c.cli.ClosePeer(in)
+	if err != nil {
+		return err
+	}
+	var resp rpctypes.Reply
+	resp.IsOk = reply.IsOk
+	resp.Msg = string(reply.GetMsg())
+	*result = &resp
+	return nil
 }

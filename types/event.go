@@ -195,6 +195,17 @@ const (
 	EventDelBlacklist = 361
 	//获取黑名单列表
 	EventShowBlacklist = 362
+
+	// 连接指定的节点
+	EventDialPeer = 363
+	//断开指定的节点
+	EventClosePeer = 364
+	EventPushBlock = 365
+	EventPushBlockHeader=366
+	EventPushTxReceipt=367
+	EventPushTxResult=368
+	EventPushEVMEvent=369
+
 )
 
 var eventName = map[int]string{
@@ -355,5 +366,7 @@ var eventName = map[int]string{
 	EventDeleteParaBlocks:           "EventDeleteParaBlocks",
 	EventAddBlacklist:               "EventAddBlacklist",
 	EventDelBlacklist:               "EventDelBlacklist",
-	EventShowBlacklist:              "EventDelBlacklist",
+	EventShowBlacklist:              "EventShowBlacklist",
+	EventDialPeer:                   "EventDialPeer",
+	EventClosePeer:                  "EventClosePeer",
 }

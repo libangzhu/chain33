@@ -39,6 +39,23 @@ func (g *Grpc) SendTransaction(ctx context.Context, in *pb.Transaction) (*pb.Rep
 	return g.cli.SendTx(in)
 }
 
+// SendTransactions send transaction by network
+func (g *Grpc) SendTransactions(ctx context.Context, in *pb.Transactions) (*pb.Replies, error) {
+	if len(in.GetTxs()) == 0 {
+		return nil, nil
+	}
+	reps := &pb.Replies{ReplyList: make([]*pb.Reply, 0, len(in.GetTxs()))}
+	for _, tx := range in.GetTxs() {
+		reply, err := g.cli.SendTx(tx)
+		if err != nil {
+			// grpc内部不允许error非空情况下返回参数,需要把错误信息记录在结构中
+			reply = &pb.Reply{Msg: []byte(err.Error())}
+		}
+		reps.ReplyList = append(reps.ReplyList, reply)
+	}
+	return reps, nil
+}
+
 // CreateNoBalanceTxs create multiple transaction with no balance
 func (g *Grpc) CreateNoBalanceTxs(ctx context.Context, in *pb.NoBalanceTxs) (*pb.ReplySignRawTx, error) {
 	reply, err := g.cli.CreateNoBalanceTxs(in)
@@ -557,6 +574,16 @@ func (g *Grpc) GetCryptoList(ctx context.Context, in *pb.ReqNil) (*pb.CryptoList
 // SendDelayTransaction send delay tx
 func (g *Grpc) SendDelayTransaction(ctx context.Context, in *pb.DelayTx) (*pb.Reply, error) {
 	return g.cli.SendDelayTx(in, true)
+}
+
+// GetWalletRecoverAddress get recover addr
+func (g *Grpc) GetWalletRecoverAddress(ctx context.Context, in *pb.ReqGetWalletRecoverAddr) (*pb.ReplyString, error) {
+	return g.cli.GetWalletRecoverAddr(in)
+}
+
+// SignWalletRecoverTx sign wallet recover tx
+func (g *Grpc) SignWalletRecoverTx(ctx context.Context, in *pb.ReqSignWalletRecoverTx) (*pb.ReplySignRawTx, error) {
+	return g.cli.SignWalletRecoverTx(in)
 }
 
 // GetChainConfig 获取chain config 参数

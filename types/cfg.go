@@ -128,6 +128,8 @@ type Consensus struct {
 	MinerExecs []string `json:"minerExecs,omitempty"`
 	// 最优区块选择
 	EnableBestBlockCmp bool `json:"enableBestBlockCmp,omitempty"`
+	// 不回滚的共识设为true
+	NoneRollback bool `json:"noneRollback,omitempty"`
 }
 
 // Wallet 配置
@@ -165,6 +167,8 @@ type Store struct {
 type BlockChain struct {
 	// 分片存储中每个大块包含的区块数
 	ChunkblockNum int64 `json:"chunkblockNum,omitempty"`
+	// blockchain模块保留的区块数，这些区块暂不参与分片
+	ReservedBlockNum int64 `json:"reservedBlockNum,omitempty"`
 	// 缓存区块的个数
 	DefCacheSize int64 `json:"defCacheSize,omitempty"`
 	// 同步区块时一次最多申请获取的区块个数

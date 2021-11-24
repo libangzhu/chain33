@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/33cn/chain33/common"
 	"github.com/33cn/chain33/common/address"
 	"github.com/33cn/chain33/system/p2p/dht"
@@ -34,6 +35,7 @@ func (r ReadParase) parseOnlineFileAddr(indata [][]byte) map[string]bool {
 		fileContent := string(in)
 		st := strings.TrimSpace(string(fileContent))
 		strs := strings.Split(st, "\n")
+		fmt.Println("parseOnlineFileAddr lines:",len(strs))
 		for _, linestr := range strs {
 			pidaddr := strings.Split(linestr, "@")
 			if len(pidaddr) >= 2 {
@@ -78,8 +80,19 @@ func (r ReadParase) parseOnServFileContentMap(indata [][]byte) (map[string]strin
 			if len(pidaddr) >= 2 {
 				if *chainver != ""{
 					versions:=pidaddr[2]
-					appVer:=strings.Split(versions,"-")[0]
-					if appVer != *chainver{//airdrop this version
+					//fmt.Println("version:",versions,"pidaddr[2]",pidaddr[2])
+					vers:=strings.Split(versions,"-")
+					//fmt.Println("vers",vers)
+					if len(vers)< 2{
+						continue
+					}
+					appVer:=vers[0]
+					id:=vers[1]
+					if appVer != *chainver {//airdrop this version
+						continue
+					}
+
+					if *commitId!="" &&id!=*commitId{
 						continue
 					}
 				}

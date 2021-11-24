@@ -192,7 +192,9 @@ func CreateManageTx(cfg *types.Chain33Config, priv crypto.PrivKey, key, op, valu
 // CreateCoinsTx : Create Coins Tx
 func CreateCoinsTx(cfg *types.Chain33Config, priv crypto.PrivKey, to string, amount int64) *types.Transaction {
 	tx := createCoinsTx(cfg, to, amount)
-	tx.Sign(types.SECP256K1, priv)
+	if priv != nil {
+		tx.Sign(types.SECP256K1, priv)
+	}
 	return tx
 }
 
@@ -450,7 +452,9 @@ func PreExecBlock(client queue.Client, prevStateRoot []byte, block *types.Block,
 	}
 	ulog.Debug("PreExecBlock", "CheckBlock", types.Since(beg))
 
-	detail.KV = kvset
+	if len(kvset) > 0 {
+		detail.KV = kvset
+	}
 	detail.PrevStatusHash = prevStateRoot
 	return &detail, deltxs, nil
 }

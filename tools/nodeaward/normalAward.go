@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-const (
-	OnServiceCoins = 1250
-	OnlineCoins    = 150
+const (//2800个空投coin
+	OnServiceCoins = 1250*2
+	OnlineCoins    = 150*2
 )
 
 func normalAward(bestfilepath []string) {
@@ -57,8 +57,6 @@ func normalAward(bestfilepath []string) {
 			continue
 		}
 		noserviceCount++
-
-		continue
 	}
 	//2500+300=2800
 
@@ -73,6 +71,7 @@ func normalAward(bestfilepath []string) {
 		log.Info("SendCoins", "节点数太少，停止空投", "nodes", noserviceCount+len(OnServiceIpMap))
 		return
 	}
+	//留有缓冲检查的时间的时间
 	time.Sleep(time.Second * 16)
 	for addr := range toaddrs {
 		var randCoin int64
@@ -81,9 +80,7 @@ func normalAward(bestfilepath []string) {
 			if pidarr, ok := OnServiceIpMap[ip]; ok {
 				ReAvarage := float32(sendOnServiceCoins / float64(len(pidarr)))
 				randCoin = int64(1000.0*ReAvarage) + int64(1000*sendNoSerViceCoins)
-
 			}
-
 		} else {
 			randCoin = int64(sendNoSerViceCoins * 1000)
 		}

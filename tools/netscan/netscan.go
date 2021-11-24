@@ -28,6 +28,7 @@ import (
 var (
 	peerInfoProtoOld protocol.ID = "/chain33/peerinfoReq/1.0.0"
 	peerInfoProto                = "/chain33/peer-info/1.0.0"
+	statisticalInfo protocol.ID	 = "/chain33/statistical/1.0.0"
 	cfgPath                      = flag.String("f", "scan.toml", "config file")
 	standerHeight int64
 )
@@ -36,10 +37,16 @@ type NetScan struct {
 	host          core.Host
 	discovery     *dht.Discovery
 	peerInfoManag *manage.PeerInfoManager
+	netInfo 		 sync.Map //统计在线节点的net info信息，包含带宽信息等 peerName --->netinfo
 	cancel        context.CancelFunc
 	ctx           context.Context
 	seeds         map[string]bool
 	cli           queue.Client
+	InConnNum  sync.Map//inboundsNum ---->count
+	OutConnNum sync.Map //outboundNum ---->count
+	NetRate sync.Map //totalNetRate  ---->count
+
+
 }
 
 func NewScanner(client queue.Client) *NetScan {
@@ -89,12 +96,18 @@ func NewScanner(client queue.Client) *NetScan {
 }
 func (n *NetScan) Start() {
 	n.discovery.Start()
+	//获取节点的peerinfo 信息
 	go n.ScanNetPeerInfos()
+	//尝试对新节点发起连接测试
 	go n.ScanNetPeers()
+	//定时写文件，记录扫描到的信息
 	go n.TicketWrite()
+	//获取网络节点
 	go n.GetClosestPeers()
 	//queue msg
 	go n.subMsg()
+	// 统计节点连接情况
+
 }
 
 func (n *NetScan) subMsg() {
@@ -179,7 +192,7 @@ func (n *NetScan) ScanNetPeerInfos() { //
 			if con.RemotePeer() == n.host.ID() {
 				continue
 			}
-
+			n.getstatisticPeerInfos(con.RemotePeer())
 			n.getPeerInfo(con.RemotePeer(), nil)
 			wg.Add(1)
 			go n.fetchConnToPeer(con.RemotePeer(), &wg)
@@ -192,6 +205,8 @@ func (n *NetScan) ScanNetPeerInfos() { //
 	}
 
 }
+
+
 
 func (n *NetScan) TicketWrite() {
 	ticker := time.NewTicker(time.Minute * 5)
@@ -206,8 +221,9 @@ func (n *NetScan) TicketWrite() {
 		allNodeF := Createfile("onlinepids")
 		localionsF := Createfile("localtions")
 		countryF := Createfile("countryinfos")
-
-
+	//	runtimeF:=Createfile("runtime")
+	//	var runtimeMap sync.Map
+	    n.statisticNetinfo()
 		pinfos := n.peerInfoManag.FetchAll()
 		for _, info := range pinfos {
 			if info.Version == "" {
@@ -220,17 +236,23 @@ func (n *NetScan) TicketWrite() {
 				versionM[info.Version] = make(map[string]int64)
 				versionM[info.Version][info.Name] = info.Header.Height
 			}
+			info.GetRunningTime()
 			fmt.Println("peerHeight","height",info.Header.GetHeight(),"standerHeight",standerHeight)
 			if info.Header.Height+512 >= standerHeight { //512个以内，被认为是同步的
 				//增加版本号
-				serviceF.WriteString(fmt.Sprintf("%v@%v@%v\n", info.Name, fmt.Sprintf("%s:%d", info.Addr, info.Port), info.Version))
+				//进一步确定是否是公网节点：
+				if 	n.host.Network().Connectedness(peer.ID(info.Name))!=network.CannotConnect{
+					serviceF.WriteString(fmt.Sprintf("%v@%v@%v@%v\n", info.Name, fmt.Sprintf("%s:%d", info.Addr, info.Port), info.Version,info.GetRunningTime()))
+				}
+
 			} else {
 
-				unsyncF.WriteString(fmt.Sprintf("%v@%v@diff:%d@%v\n", info.Name,
-					fmt.Sprintf("%s:%d", info.Addr, info.Port), standerHeight-info.Header.Height, info.Version))
+				unsyncF.WriteString(fmt.Sprintf("%v@%v@diff:%d@%v@%v@%v\n", info.Name,
+					fmt.Sprintf("%s:%d", info.Addr, info.Port), standerHeight-info.Header.Height, info.Version,info.GetRunningTime(),info.GetBlocked()))
 			}
 
 		}
+
 		for ver, vV := range versionM {
 			versionF.WriteString(fmt.Sprintf("%v-----%d\n", ver, len(vV)))
 		}
@@ -265,7 +287,7 @@ func (n *NetScan) TicketWrite() {
 		}
 		//
 		tempLocalInfo.mtx.Lock()
-		countryinfo := fmt.Sprintf("\n+++++++++++++++++++Country AND  Region Num:", len(tempLocalInfo.locationMap))
+		countryinfo := fmt.Sprintf("\n+++++++++++++++++++Country AND  Region Num:%v", len(tempLocalInfo.locationMap))
 		for country, regionMap := range tempLocalInfo.locationMap {
 			var pidNum int
 			var pids []string
@@ -293,7 +315,6 @@ func (n *NetScan) TicketWrite() {
 		tempLocalInfo.mtx.Unlock()
 
 		if ReflushLocalInfo(*gossipPath, tempLocalInfo) {
-			//log.Info("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 			locaInfo = tempLocalInfo
 		}
 
@@ -354,7 +375,42 @@ func (n *NetScan) ScanNetPeers() {
 	}
 
 }
+//getstatisticPeerInfos 通过接口/chain33/statistical/1.0.0 获取到更详尽的节点信息
+func (n *NetScan)getstatisticPeerInfos(peerID core.PeerID){
+	var resp types.Statistical
+	var reNum int
+	ctx, cancel := context.WithTimeout(n.ctx, time.Second*5)
+	defer cancel()
+ReConn:
+	stream, err := n.host.NewStream(ctx, peerID, statisticalInfo)
+	if err != nil {
+		//	log.Error("getPeerInfo", "NewStreamErr", err, "peerID", peerID)
+		return
+	}
+	defer dprotol.CloseStream(stream)
+	err = dprotol.WriteStream(&types.ReqNil{}, stream)
+	if err != nil {
+		if err.Error() == "stream reset" {
+			time.Sleep(time.Second)
+			if reNum < 10 {
+				reNum++
+				goto ReConn
+			}
+		}
+		return
+	}
+	err = dprotol.ReadStream(&resp, stream)
+	if err != nil {
+		return
+	}
 
+	for _,peer:=range  resp.GetPeers(){
+		n.peerInfoManag.Refresh(peer)
+	}
+
+	n.netInfo.Store(peerID,resp.Nodeinfo)
+
+}
 func (n *NetScan) getPeerInfo(peerID core.PeerID, stream network.Stream) {
 	msgReq := &types.MessagePeerInfoReq{}
 	var resp types.MessagePeerInfoResp

@@ -223,6 +223,9 @@ type Peer struct {
 	Version        string  `json:"version,omitempty"`
 	LocalDBVersion string  `json:"localDBVersion,omitempty"`
 	StoreDBVersion string  `json:"storeDBVersion,omitempty"`
+	RunningTime    string  `json:"runningTime,omitempty"`
+	FullNode       bool    `json:"fullNode,omitempty"`
+	Blocked        bool    `json:"blocked,omitempty"`
 }
 
 // WalletAccounts Wallet Module
@@ -258,6 +261,11 @@ type Headers struct {
 // ReqAddr require address
 type ReqAddr struct {
 	Addr string `json:"addr"`
+}
+
+// ReqStrings require strings
+type ReqStrings struct {
+	Datas []string `json:"datas"`
 }
 
 // ReqHashes require hashes

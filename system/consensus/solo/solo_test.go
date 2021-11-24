@@ -7,20 +7,23 @@ package solo
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	_ "net/http/pprof" //
+	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/33cn/chain33/system/crypto/none"
-	"github.com/33cn/chain33/system/crypto/secp256k1"
+	cty "github.com/33cn/chain33/system/dapp/coins/types"
 
 	"github.com/33cn/chain33/common/log/log15"
+	"github.com/33cn/chain33/system/crypto/none"
+	"github.com/33cn/chain33/system/crypto/secp256k1"
 	"google.golang.org/grpc"
 
 	"github.com/33cn/chain33/common"
@@ -39,6 +42,7 @@ import (
 	_ "github.com/33cn/chain33/system/dapp/init"
 	_ "github.com/33cn/chain33/system/mempool/init"
 	_ "github.com/33cn/chain33/system/store/init"
+	//_ "github.com/33cn/plugin/plugin/store/kvmvcc"
 )
 
 // 执行： go test -cover
@@ -56,39 +60,6 @@ func TestSolo(t *testing.T) {
 		mock33.GetAPI().SendTx(txs[i])
 	}
 	mock33.WaitHeight(2)
-}
-
-func BenchmarkSolo(b *testing.B) {
-	cfg := testnode.GetDefaultConfig()
-	subcfg := cfg.GetSubConfig()
-	solocfg, err := types.ModifySubConfig(subcfg.Consensus["solo"], "waitTxMs", 1000)
-	assert.Nil(b, err)
-	subcfg.Consensus["solo"] = solocfg
-	mock33 := testnode.NewWithConfig(cfg, nil)
-	defer mock33.Close()
-	txs := util.GenCoinsTxs(cfg, mock33.GetGenesisKey(), int64(b.N))
-	var last []byte
-	var mu sync.Mutex
-	b.ResetTimer()
-	done := make(chan struct{}, 10)
-	for i := 0; i < 10; i++ {
-		go func(index int) {
-			for n := index; n < b.N; n += 10 {
-				reply, err := mock33.GetAPI().SendTx(txs[n])
-				if err != nil {
-					assert.Nil(b, err)
-				}
-				mu.Lock()
-				last = reply.GetMsg()
-				mu.Unlock()
-			}
-			done <- struct{}{}
-		}(i)
-	}
-	for i := 0; i < 10; i++ {
-		<-done
-	}
-	mock33.WaitTx(last)
 }
 
 var (
@@ -154,64 +125,222 @@ func BenchmarkSendTx(b *testing.B) {
 	})
 }
 
-//测试每10000笔交易打包的并发时间  3500tx/s
-func BenchmarkSoloNewBlock(b *testing.B) {
+func sendTxGrpc(cfg *types.Chain33Config, recvChan <-chan *types.Transaction, batchNum int) {
+	grpcAddr := cfg.GetModuleConfig().RPC.GrpcBindAddr
+	conn, err := grpc.Dial(grpcAddr, grpc.WithInsecure())
+	if err != nil {
+		panic(err.Error())
+	}
+	defer conn.Close()
+	txs := &types.Transactions{Txs: make([]*types.Transaction, 0, batchNum)}
+	retryTxs := make([]*types.Transaction, 0, batchNum*2)
+	gcli := types.NewChain33Client(conn)
+	for {
+		tx, ok := <-recvChan
+		if !ok {
+			return
+		}
+		txs.Txs = append(txs.Txs, tx)
+		if len(retryTxs) > 0 {
+			txs.Txs = append(txs.Txs, retryTxs...)
+			retryTxs = retryTxs[:0]
+		}
+		if len(txs.Txs) >= batchNum {
+
+			reps, err := gcli.SendTransactions(context.Background(), txs)
+			if err != nil {
+				tlog.Error("sendtxs", "err", err)
+				return
+			}
+
+			// retry failed txs
+			for index, reply := range reps.GetReplyList() {
+				if reply.IsOk {
+					continue
+				}
+				if string(reply.GetMsg()) == types.ErrChannelClosed.Error() {
+					return
+				}
+				if string(reply.GetMsg()) == types.ErrMemFull.Error() ||
+					string(reply.GetMsg()) == types.ErrManyTx.Error() {
+					retryTxs = append(retryTxs, txs.Txs[index])
+				}
+			}
+			if len(retryTxs) > 0 {
+				time.Sleep(time.Second * 3)
+			}
+			txs.Txs = txs.Txs[:0]
+		}
+
+	}
+}
+
+func sendTxDirect(mock33 *testnode.Chain33Mock, recvChan <-chan *types.Transaction) {
+
+	for {
+		tx, ok := <-recvChan
+		if !ok {
+			return
+		}
+		_, err := mock33.GetAPI().SendTx(tx)
+		if err != nil {
+			if strings.Contains(err.Error(), "ErrChannelClosed") {
+				return
+			}
+			tlog.Error("sendtx", "err", err.Error())
+			time.Sleep(time.Second)
+			continue
+		}
+	}
+}
+
+var (
+	enablesign      *bool
+	sendtxgrpc      *bool
+	enabletxfee     *bool
+	enabledupcheck  *bool
+	enabletxindex   *bool
+	enableexeccheck *bool
+	maxtxnum        *int64
+	txtype          *string
+	accountnum      *int
+	txsize          *int
+)
+
+func init() {
+	enablesign = flag.Bool("enablesign", false, "enable tx sign")
+	sendtxgrpc = flag.Bool("grpc", true, "send tx in grpc")
+	enabletxfee = flag.Bool("txfee", false, "enable tx fee")
+	enabledupcheck = flag.Bool("dupcheck", false, "enable dup check")
+	enabletxindex = flag.Bool("txindex", false, "enable tx index")
+	enableexeccheck = flag.Bool("execcheck", false, "enabletxindex")
+	maxtxnum = flag.Int64("maxtxnum", 10000, "max tx num in block")
+	txtype = flag.String("txtype", "none", "set tx type, coins/none")
+	accountnum = flag.Int("accountnum", 10, "set account num for transfer bench, default 10")
+	txsize = flag.Int("txsize", 32, "set none tx size byte")
+	testing.Init()
+	flag.Parse()
+
+}
+
+func createCoinsTx(cfg *types.Chain33Config, to string, txHeight int64) *types.Transaction {
+	action := &cty.CoinsAction{Ty: cty.CoinsActionTransfer}
+	action.Value = &cty.CoinsAction_Transfer{
+		Transfer: &types.AssetsTransfer{
+			Cointoken: cfg.GetCoinSymbol(),
+			Amount:    1,
+			To:        to,
+		},
+	}
+	tx := &types.Transaction{Execer: []byte("coins")}
+	tx.Payload = types.Encode(action)
+	tx.To = to
+	tx.Nonce = rand.Int63()
+	tx.Fee = 100000
+	tx.ChainID = cfg.GetChainID()
+	tx.Expire = types.TxHeightFlag + txHeight
+	return tx
+}
+
+//测试solo并发
+func BenchmarkSolo(b *testing.B) {
+
 	if testing.Short() {
 		b.Skip("skipping in short mode.")
 	}
-	cfg := testnode.GetDefaultConfig()
+	cfgStr := types.GetDefaultCfgstring()
+	if *accountnum < 10 {
+		*accountnum = 10
+	}
+	if *maxtxnum > 10000 {
+		str := fmt.Sprintf("maxTxNumber = %d", *maxtxnum)
+		cfgStr = strings.Replace(cfgStr, "maxTxNumber = 10000", str, -1)
+	}
+	cfg := types.NewChain33Config(cfgStr)
 	cfg.GetModuleConfig().Exec.DisableAddrIndex = true
 	cfg.GetModuleConfig().Exec.DisableFeeIndex = true
-	cfg.GetModuleConfig().Exec.DisableTxIndex = true
-	cfg.GetModuleConfig().Exec.DisableTxDupCheck = true
-	cfg.GetModuleConfig().Mempool.DisableExecCheck = true
-	cfg.GetModuleConfig().Mempool.MinTxFeeRate = 0
-	cfg.SetMinFee(0)
+	cfg.GetModuleConfig().Exec.DisableTxIndex = !*enabletxindex
+	cfg.GetModuleConfig().Exec.DisableTxDupCheck = !*enabledupcheck
+	cfg.GetModuleConfig().Mempool.DisableExecCheck = !*enableexeccheck
+	cfg.GetModuleConfig().BlockChain.HighAllowPackHeight = 200
+	cfg.GetModuleConfig().BlockChain.LowAllowPackHeight = 100
+	cfg.GetModuleConfig().Mempool.PoolCacheSize = 200000
+	cfg.GetModuleConfig().Mempool.MaxTxNumPerAccount = 210000
+	cfg.GetModuleConfig().BlockChain.EnableTxQuickIndex = false
+	cfg.GetModuleConfig().Consensus.NoneRollback = true
+	if !*enabletxfee {
+		cfg.GetModuleConfig().Mempool.MinTxFeeRate = 0
+		cfg.SetMinFee(0)
+	}
 	cfg.GetModuleConfig().RPC.GrpcBindAddr = "localhost:8802"
 	cfg.GetModuleConfig().Crypto.EnableTypes = []string{secp256k1.Name, none.Name}
 	subcfg := cfg.GetSubConfig()
+	coinSub, _ := types.ModifySubConfig(subcfg.Exec["coins"], "disableAddrReceiver", true)
+	subcfg.Exec["coins"] = coinSub
 	solocfg, err := types.ModifySubConfig(subcfg.Consensus["solo"], "waitTxMs", 100)
 	assert.Nil(b, err)
 	solocfg, err = types.ModifySubConfig(solocfg, "benchMode", true)
 	assert.Nil(b, err)
 	subcfg.Consensus["solo"] = solocfg
+	cpuNum := runtime.NumCPU()
 	mock33 := testnode.NewWithRPC(cfg, nil)
 	defer mock33.Close()
-	start := make(chan struct{})
+	go func() {
+		_ = http.ListenAndServe(":6060", nil)
+	}()
+	createRoutineCount := cpuNum
+	toAddrPerRoutine := *accountnum/createRoutineCount + 1
+	toAddrList := make([][]string, createRoutineCount)
 
+	for i := 0; i < createRoutineCount; i++ {
+		toAddrList[i] = make([]string, 0, toAddrPerRoutine)
+		for j := 0; j < toAddrPerRoutine; j++ {
+			addr, _ := util.Genaddress()
+			toAddrList[i] = append(toAddrList[i], addr)
+		}
+	}
+
+	txChan := make(chan *types.Transaction, 10000)
+	for i := 0; i < cpuNum*2; i++ {
+		if *sendtxgrpc {
+			go sendTxGrpc(cfg, txChan, 100)
+		} else {
+			go sendTxDirect(mock33, txChan)
+		}
+	}
+
+	start := make(chan struct{})
 	var height int64
-	for i := 0; i < 10; i++ {
-		addr, _ := util.Genaddress()
-		go func(addr string) {
+	for i := 0; i < createRoutineCount; i++ {
+		go func(index int) {
 			start <- struct{}{}
-			conn, err := grpc.Dial("localhost:8802", grpc.WithInsecure())
-			if err != nil {
-				panic(err.Error())
-			}
-			defer conn.Close()
-			//gcli := types.NewChain33Client(conn)
+			var tx *types.Transaction
+			toAddrs := toAddrList[index]
+			txCount := 0
 			pub := mock33.GetGenesisKey().PubKey().Bytes()
+			payload := []byte(strings.Repeat("t", *txsize))
 			for {
+				toAddrIndex := txCount % toAddrPerRoutine
 				txHeight := atomic.LoadInt64(&height) + types.LowAllowPackHeight/2
-				//tx := util.CreateNoneTxWithTxHeight(cfg, mock33.GetGenesisKey(), txHeight)
-				//测试去签名情况
-				tx := util.CreateNoneTxWithTxHeight(cfg, nil, txHeight)
-				tx.Signature = &types.Signature{
-					Ty:     none.ID,
-					Pubkey: pub,
+				if *txtype != "none" {
+					tx = createCoinsTx(cfg, toAddrs[toAddrIndex], txHeight)
+				} else {
+					tx = util.CreateNoneTxWithTxHeight(cfg, nil, txHeight)
+					tx.Payload = payload
 				}
-				//_, err := gcli.SendTransaction(context.Background(), tx)
-				_, err := mock33.GetAPI().SendTx(tx)
-				if err != nil {
-					if strings.Contains(err.Error(), "ErrChannelClosed") {
-						return
+				if *enablesign {
+					tx.Sign(types.SECP256K1, mock33.GetGenesisKey())
+				} else {
+					//测试去签名情况
+					tx.Signature = &types.Signature{
+						Ty:     none.ID,
+						Pubkey: pub,
 					}
-					tlog.Error("sendtx", "err", err.Error())
-					time.Sleep(2 * time.Second)
-					continue
 				}
+				txChan <- tx
+				txCount++
 			}
-		}(addr)
+		}(i)
 		<-start
 	}
 	b.ResetTimer()
@@ -222,12 +351,12 @@ func BenchmarkSoloNewBlock(b *testing.B) {
 			time.Sleep(time.Second / 10)
 			err = mock33.WaitHeight(int64(i + 1))
 		}
-		atomic.AddInt64(&height, 1)
+		atomic.StoreInt64(&height, int64(i+1))
 	}
 }
 
 // 交易签名性能测试  单核4k
-func BenchmarkTxSign(b *testing.B) {
+func BenchmarkCheckSign(b *testing.B) {
 	if testing.Short() {
 		b.Skip("skipping in short mode.")
 	}
@@ -238,9 +367,9 @@ func BenchmarkTxSign(b *testing.B) {
 
 	start := make(chan struct{})
 	wait := make(chan struct{})
-	result := make(chan interface{}, txBenchNum)
+	result := make(chan interface{})
 	//控制并发协程数量
-	for i := 0; i < 8; i++ {
+	for i := 0; i < runtime.NumCPU(); i++ {
 		go func() {
 			wait <- struct{}{}
 			index := 0

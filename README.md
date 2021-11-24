@@ -6,7 +6,7 @@ https://camo.githubusercontent.com/915b7be44ada53c290eb157634330494ebe3e30a/6874
  [![Windows Build Status](https://ci.appveyor.com/api/projects/status/github/33cn/chain33?svg=true&branch=master&passingText=Windows%20-%20OK&failingText=Windows%20-%20failed&pendingText=Windows%20-%20pending)](https://ci.appveyor.com/project/33cn/chain33)
 [![codecov](https://codecov.io/gh/33cn/chain33/branch/master/graph/badge.svg)](https://codecov.io/gh/33cn/chain33) [![Join the chat at https://gitter.im/33cn/Lobby](https://badges.gitter.im/33cn/Lobby.svg)](https://gitter.im/33cn/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-# Chain33 区块链开发框架(为了适合go module 的版本号标准 最新版本号改为: 1.65.0)
+# Chain33 区块链开发框架 
 
 高度模块化, 遵循 KISS原则的区块链开发框架
 
@@ -26,7 +26,7 @@ chain33背后故事: [chain33诞生记](https://mp.weixin.qq.com/s/9g5ZFDKJi9uzR
 
 # bug 奖励
 
-我们会对bug 评价4个等级(不会奖励人民币，等值虚拟资产)。
+我们会对bug 评价4个等级(不会奖励人民币，等值虚拟资产)。 
 只有影响现有在线运行系统的，并且会产生严重分叉等行为的，才会评价为 L3
 
 ```
@@ -36,9 +36,9 @@ L2 10000
 L3 20000
 ```
 
-## Building from source
+## Building from source 
 
-环境要求: Go (version 1.13 or later)
+环境要求: Go (version 1.15 or later)
 
 编译:
 
@@ -168,7 +168,7 @@ make pull name=libangzhu b=chain33-p2p-listenPort
 make pullpush name=libangzhu b=chain33-p2p-listenPort
 ```
 
-## License
+## License 
 
 ```
 BSD 3-Clause License

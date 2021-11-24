@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"github.com/33cn/chain33/common"
+	dbm "github.com/33cn/chain33/common/db"
+	"github.com/33cn/chain33/types"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -11,10 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/33cn/chain33/common"
-	dbm "github.com/33cn/chain33/common/db"
-	"github.com/33cn/chain33/types"
 )
 
 const (

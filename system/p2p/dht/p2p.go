@@ -73,7 +73,15 @@ type P2P struct {
 
 func setLibp2pLog(logFile, logLevel string) {
 
-	if _, err := os.Stat(logFile); os.IsNotExist(err) {
+	if logFile == "" {
+		return
+	}
+	_, err := os.Stat(logFile)
+	if os.IsNotExist(err) {
+		err = os.MkdirAll(filepath.Dir(logFile), 0744)
+	}
+	if err != nil {
+		log.Error("setLibp2pLog", "err", err)
 		return
 	}
 
@@ -87,7 +95,7 @@ func setLibp2pLog(logFile, logLevel string) {
 		File:   logFile,
 	})
 
-	err := libp2pLog.SetLogLevel("*", logLevel)
+	err = libp2pLog.SetLogLevel("*", logLevel)
 	if err != nil {
 		log.Error("NewP2P", "set libp2p log level err", err)
 	}
@@ -104,7 +112,7 @@ func New(mgr *p2p.Manager, subCfg []byte) p2p.IP2P {
 		mcfg.Port = p2pty.DefaultP2PPort
 	}
 	// set libp2p log
-	setLibp2pLog(mgr.ChainCfg.GetModuleConfig().Log.LogFile, mcfg.Libp2pLogLevel)
+	setLibp2pLog(mcfg.Libp2pLogFile, mcfg.Libp2pLogLevel)
 
 	p := &P2P{
 		client:   mgr.Client,
@@ -268,13 +276,14 @@ func (p *P2P) buildHostOptions(priv crypto.PrivKey, bandwidthTracker metrics.Rep
 	options = append(options, libp2p.BandwidthReporter(bandwidthTracker))
 
 	if p.subCfg.MaxConnectNum > 0 { //如果不设置最大连接数量，默认允许dht自由连接并填充路由表
-		var maxconnect = int(p.subCfg.MaxConnectNum)
-		minconnect := maxconnect - int(manage.CacheLimit) //调整为不超过配置的上限
-		if minconnect <= 0 {
+		maxconnect := int(p.subCfg.MaxConnectNum)
+		minconnect := 20
+		if minconnect > maxconnect/2 {
 			minconnect = maxconnect / 2
 		}
-		//2分钟的宽限期,定期清理
-		options = append(options, libp2p.ConnectionManager(connmgr.NewConnManager(minconnect, maxconnect, time.Minute*2)))
+
+		//1分钟的宽限期,定期清理
+		options = append(options, libp2p.ConnectionManager(connmgr.NewConnManager(minconnect, maxconnect, time.Minute)))
 
 	}
 	//ConnectionGater,处理网络连接的策略
