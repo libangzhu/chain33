@@ -277,7 +277,7 @@ func (n *NetScan) TicketWrite() {
 				//增加版本号
 				//进一步确定是否是公网节点：
 				if n.host.Network().Connectedness(peer.ID(info.Name)) != network.CannotConnect {
-					serviceF.WriteString(fmt.Sprintf("%v@%v@%v@%v\n", info.Name, fmt.Sprintf("%s:%d", info.Addr, info.Port), info.Version, info.GetRunningTime()))
+					serviceF.WriteString(fmt.Sprintf("%v@%v@%v@%v@%d\n", info.Name, fmt.Sprintf("%s:%d", info.Addr, info.Port), info.Version, info.GetRunningTime(),info.GetHeader().GetHeight()))
 				}
 
 			} else {
