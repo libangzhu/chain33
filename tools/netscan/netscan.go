@@ -28,24 +28,23 @@ import (
 var (
 	peerInfoProtoOld protocol.ID = "/chain33/peerinfoReq/1.0.0"
 	peerInfoProto                = "/chain33/peer-info/1.0.0"
-	statisticalInfo protocol.ID	 = "/chain33/statistical/1.0.0"
+	statisticalInfo  protocol.ID = "/chain33/statistical/1.0.0"
 	cfgPath                      = flag.String("f", "scan.toml", "config file")
-	standerHeight int64
+	standerHeight    int64
 )
 
 type NetScan struct {
 	host          core.Host
 	discovery     *dht.Discovery
 	peerInfoManag *manage.PeerInfoManager
-	netInfo 		 sync.Map //统计在线节点的net info信息，包含带宽信息等 peerName --->netinfo
+	netInfo       sync.Map //统计在线节点的net info信息，包含带宽信息等 peerName --->netinfo
 	cancel        context.CancelFunc
 	ctx           context.Context
 	seeds         map[string]bool
 	cli           queue.Client
-	InConnNum  sync.Map//inboundsNum ---->count
-	OutConnNum sync.Map //outboundNum ---->count
-	NetRate sync.Map //totalNetRate  ---->count
-
+	InConnNum     sync.Map //inboundsNum ---->count
+	OutConnNum    sync.Map //outboundNum ---->count
+	NetRate       sync.Map //totalNetRate  ---->count
 
 }
 
@@ -80,9 +79,9 @@ func NewScanner(client queue.Client) *NetScan {
 	dis := dht.InitDhtDiscovery(ctx, h, nil, cfg, mcfg)
 	peers := ConvertPeers(mcfg.Seeds)
 	log.Info("netscan", "hostId", h.ID(), "seeds", mcfg.Seeds)
-	var seedpid =make(map[string]bool)
+	var seedpid = make(map[string]bool)
 	for pid := range peers {
-		seedpid[pid]=true
+		seedpid[pid] = true
 		//seedpid = append(seedpid, pid)
 	}
 
@@ -120,6 +119,44 @@ func (n *NetScan) subMsg() {
 				infos := GetpeerLocaltionInfo()
 				log.Info("subMsg", "infos", len(infos))
 				msg.Reply(n.cli.NewMessage("rpc", rpc.EventPeerLocaltionInfo, &rpc.ConriesInfo{Countries: infos}))
+
+			case rpc.EventPeersNetRateInfo:
+				req := msg.GetData().(*rpc.NetRateReq)
+				reqTime, err := time.Parse("2006-01-02", req.Date)
+				if err != nil {
+					msg.Reply(n.cli.NewMessage("rpc", rpc.EventPeersNetRateInfo, types.Reply{IsOk: false, Msg: []byte(err.Error())}))
+					return
+				}
+
+				h := time.Now().Hour()
+				y, m, d := reqTime.Date()
+				preKey := NetRatePrefix + fmt.Sprintf("%v-%d-%v-", y, m, d)
+
+				if m < 10 && m > 0 {
+					preKey = NetRatePrefix + fmt.Sprintf("%v-0%d-%v-", y, m, d)
+				}
+				if d < time.Now().Day() {
+					h = 24
+				}
+				log.Info("EventPeersNetRateInfo", "prekey:", preKey)
+				var rateResp rpc.PeersNetRateResp
+				for i := 0; i < h; i++ {
+					key := preKey + fmt.Sprintf("%v", i)
+					rateinfo, err := KvDb.Get([]byte(key))
+					if err != nil {
+						continue
+					}
+					var netrateInfo rpc.NetrateInfo
+					netrateInfo.Rate = string(rateinfo)
+					t := strings.TrimPrefix(key, NetRatePrefix)
+					splits := strings.Split(t, "-")
+					if len(splits) != 4 {
+						continue
+					}
+					netrateInfo.Time = fmt.Sprintf("%v-%v-%v:%v", splits[0], splits[1], splits[2], splits[3])
+					rateResp.Netrate = append(rateResp.Netrate, &netrateInfo)
+				}
+				msg.Reply(n.cli.NewMessage("rpc", rpc.EventPeersNetRateInfo, &rateResp))
 			}
 		}
 
@@ -154,7 +191,7 @@ func (n *NetScan) connectClosesPeers(peer peer.ID, wg *sync.WaitGroup) {
 	if err != nil {
 		return
 	}
-	for _,p:=range peers{
+	for _, p := range peers {
 		n.host.Network().DialPeer(n.ctx, p)
 
 	}
@@ -165,12 +202,12 @@ func (n *NetScan) fetchConnToPeer(peerID core.PeerID, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	//peerchan, err := n.discovery.FindPeersConnectedToPeer(peerID)
-	peers :=n.discovery.FindNearestPeers(peerID,20)
+	peers := n.discovery.FindNearestPeers(peerID, 20)
 
-	for _,p:=range peers {
-		pinfo:= n.host.Peerstore().PeerInfo(p)
+	for _, p := range peers {
+		pinfo := n.host.Peerstore().PeerInfo(p)
 		err := n.host.Connect(n.ctx, pinfo)
-		if err!=nil{
+		if err != nil {
 			log.Error("fetchConnToPeer", "err", err)
 		}
 
@@ -206,8 +243,6 @@ func (n *NetScan) ScanNetPeerInfos() { //
 
 }
 
-
-
 func (n *NetScan) TicketWrite() {
 	ticker := time.NewTicker(time.Minute * 5)
 
@@ -221,9 +256,9 @@ func (n *NetScan) TicketWrite() {
 		allNodeF := Createfile("onlinepids")
 		localionsF := Createfile("localtions")
 		countryF := Createfile("countryinfos")
-	//	runtimeF:=Createfile("runtime")
-	//	var runtimeMap sync.Map
-	    n.statisticNetinfo()
+		//	runtimeF:=Createfile("runtime")
+		//	var runtimeMap sync.Map
+		n.statisticNetinfo()
 		pinfos := n.peerInfoManag.FetchAll()
 		for _, info := range pinfos {
 			if info.Version == "" {
@@ -237,18 +272,18 @@ func (n *NetScan) TicketWrite() {
 				versionM[info.Version][info.Name] = info.Header.Height
 			}
 			info.GetRunningTime()
-			fmt.Println("peerHeight","height",info.Header.GetHeight(),"standerHeight",standerHeight)
+			fmt.Println("peerHeight", "height", info.Header.GetHeight(), "standerHeight", standerHeight)
 			if info.Header.Height+512 >= standerHeight { //512个以内，被认为是同步的
 				//增加版本号
 				//进一步确定是否是公网节点：
-				if 	n.host.Network().Connectedness(peer.ID(info.Name))!=network.CannotConnect{
-					serviceF.WriteString(fmt.Sprintf("%v@%v@%v@%v\n", info.Name, fmt.Sprintf("%s:%d", info.Addr, info.Port), info.Version,info.GetRunningTime()))
+				if n.host.Network().Connectedness(peer.ID(info.Name)) != network.CannotConnect {
+					serviceF.WriteString(fmt.Sprintf("%v@%v@%v@%v\n", info.Name, fmt.Sprintf("%s:%d", info.Addr, info.Port), info.Version, info.GetRunningTime()))
 				}
 
 			} else {
 
 				unsyncF.WriteString(fmt.Sprintf("%v@%v@diff:%d@%v@%v@%v\n", info.Name,
-					fmt.Sprintf("%s:%d", info.Addr, info.Port), standerHeight-info.Header.Height, info.Version,info.GetRunningTime(),info.GetBlocked()))
+					fmt.Sprintf("%s:%d", info.Addr, info.Port), standerHeight-info.Header.Height, info.Version, info.GetRunningTime(), info.GetBlocked()))
 			}
 
 		}
@@ -273,8 +308,8 @@ func (n *NetScan) TicketWrite() {
 					}
 				}
 			}
-			if ip==""{
-				fmt.Println("peer",peer.String(),"addrs",pinfo.Addrs)
+			if ip == "" {
+				fmt.Println("peer", peer.String(), "addrs", pinfo.Addrs)
 			}
 			ipdata := n.CheckIp(ip)
 			if ipdata != nil {
@@ -318,7 +353,7 @@ func (n *NetScan) TicketWrite() {
 			locaInfo = tempLocalInfo
 		}
 
-		locaInfo=tempLocalInfo
+		locaInfo = tempLocalInfo
 		jbytes, _ := json.Marshal(countryData)
 		tempLocalInfo.Stat = true
 		localionsF.WriteString(countryinfo)
@@ -375,8 +410,9 @@ func (n *NetScan) ScanNetPeers() {
 	}
 
 }
+
 //getstatisticPeerInfos 通过接口/chain33/statistical/1.0.0 获取到更详尽的节点信息
-func (n *NetScan)getstatisticPeerInfos(peerID core.PeerID){
+func (n *NetScan) getstatisticPeerInfos(peerID core.PeerID) {
 	var resp types.Statistical
 	var reNum int
 	ctx, cancel := context.WithTimeout(n.ctx, time.Second*5)
@@ -404,11 +440,11 @@ ReConn:
 		return
 	}
 
-	for _,peer:=range  resp.GetPeers(){
+	for _, peer := range resp.GetPeers() {
 		n.peerInfoManag.Refresh(peer)
 	}
 
-	n.netInfo.Store(peerID,resp.Nodeinfo)
+	n.netInfo.Store(peerID, resp.Nodeinfo)
 
 }
 func (n *NetScan) getPeerInfo(peerID core.PeerID, stream network.Stream) {
@@ -452,14 +488,13 @@ ReConn:
 		return
 	}
 	peerinfo := resp.GetMessage()
-	if n.seeds[peerinfo.Name]{
-		standerHeight=peerinfo.Header.GetHeight()
+	if n.seeds[peerinfo.Name] {
+		standerHeight = peerinfo.Header.GetHeight()
 	}
 	n.peerInfoManag.Refresh(&types.Peer{Name: peerinfo.Name, Addr: peerinfo.Addr, Port: peerinfo.GetPort(), MempoolSize: peerinfo.GetMempoolSize(),
 		Header: peerinfo.GetHeader(), Version: peerinfo.GetVersion(), LocalDBVersion: peerinfo.GetLocalDBVersion(), StoreDBVersion: peerinfo.GetStoreDBVersion(),
 		Self: false,
 	})
-
 
 	//stream.Close()
 

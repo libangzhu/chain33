@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-var KvDb db.DB
+var (
+	NetRatePrefix = "level-netrate-"
+	KvDb          db.DB
+)
 
 //var path = `./datadir`
 type schan chan string
@@ -252,7 +255,7 @@ func GetpeerLocaltionInfo() []*rpc.CountryInfo {
 			for city, info := range cityMap {
 				log.Info("GetpeerLocaltionInfo", "CityMap region", region, "city", city, "size", len(info.pids))
 				pidNum += len(info.pids)
-				log.Info("getpeerlocaltioninfo", "pids", info.pids)
+				//log.Info("getpeerlocaltioninfo", "pids", info.pids)
 
 			}
 		}

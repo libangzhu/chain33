@@ -5,14 +5,15 @@ import (
 	"testing"
 )
 
-func Test_Parase(t *testing.T){
-	nt:= &NetScan{}
+func Test_Parase(t *testing.T) {
+	nt := &NetScan{}
 
-	f,err:=	nt.ParaseRate("46.802 MB/s")
-	if err!=nil{
+	f, err := nt.ParaseRate("46.802 MB/s")
+	if err != nil {
 		t.Log(err)
 		return
 	}
 
-	t.Log(fmt.Sprintf("%f",f))
+	t.Log(fmt.Sprintf("%f", f))
 }
+
