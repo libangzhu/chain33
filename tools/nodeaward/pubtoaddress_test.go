@@ -8,7 +8,7 @@ import (
 )
 
 func Test_PubtoAddress(t *testing.T){
-	pubstr, err := dht.PeerIDToPubkey("16Uiu2HAmKkaST91Nx9pWVDxFZxoQQze89ZESUEQhcjsKPJXQag1u")
+	pubstr, err := dht.PeerIDToPubkey("16Uiu2HAm4kAMcMyNY6nMFxhtQ86yxnnF81EqWnryBVGYqBZ99B5d")
 	if err!=nil{
 		return
 	}
