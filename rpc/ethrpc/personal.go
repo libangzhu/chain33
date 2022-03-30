@@ -65,7 +65,7 @@ req
 ```
 {
   "method":"personal_newAccount",
-  "params":["test"],
+  "params":["testLabel",2],
   "id":1,
   "jsonrpc":"2.0"
 }
@@ -77,12 +77,13 @@ response
 {
     "jsonrpc": "2.0",
     "id": 1,
-    "result": "1DuYwg7eVrBEYKaiZBFtsqNZWT4K923JwN"
+    "result": "0xc2315541874910c419c34F1Fa9c6d0ac4E6159E2"
 }
 ```
  */
-func (p *PersonalApi) NewAccount(lable string) (string, error){
-	req := &ctypes.ReqNewAccount{Label:lable}
+func (p *PersonalApi) NewAccount(lable string, addrID int32) (string, error){
+
+	req := &ctypes.ReqNewAccount{Label:lable, AddressID:addrID}
 	resp, err := p.cli.ExecWalletFunc("wallet", "NewAccount", req)
 	if err != nil {
 		return "", err
