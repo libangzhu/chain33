@@ -124,17 +124,23 @@ func (n *NetScan) subMsg() {
 				req := msg.GetData().(*rpc.NetRateReq)
 				reqTime, err := time.Parse("2006-01-02", req.Date)
 				if err != nil {
-					msg.Reply(n.cli.NewMessage("rpc", rpc.EventPeersNetRateInfo, types.Reply{IsOk: false, Msg: []byte(err.Error())}))
-					return
+					msg.Reply(n.cli.NewMessage("rpc", rpc.EventPeersNetRateInfo, &types.Reply{IsOk: false, Msg: []byte(err.Error())}))
+					continue
 				}
 
 				h := time.Now().Hour()
-				y, m, d := reqTime.Date()
-				preKey := NetRatePrefix + fmt.Sprintf("%v-%d-%v-", y, m, d)
-
-				if m < 10 && m > 0 {
-					preKey = NetRatePrefix + fmt.Sprintf("%v-0%d-%v-", y, m, d)
-				}
+				_,_, d := reqTime.Date()
+				//preKey := NetRatePrefix + fmt.Sprintf("%v-%d-%v-", y, m, d)
+				//if d<10{
+				//	preKey = NetRatePrefix + fmt.Sprintf("%v-%d-0%d-", y, m, d)
+				//}
+				//if m < 10 && m > 0 {
+				//	preKey = NetRatePrefix + fmt.Sprintf("%v-0%d-", y, m)
+				//}
+				//if d<10{
+				//	fmt.Sprintf("%v-0%d",preKey,d)
+				//}
+				preKey:=NetRatePrefix+req.Date+"-"
 				if d < time.Now().Day() {
 					h = 24
 				}

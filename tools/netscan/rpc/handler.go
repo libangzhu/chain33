@@ -1,8 +1,10 @@
 package rpc
 
 import (
+	"errors"
 	log "github.com/33cn/chain33/common/log/log15"
 	"github.com/33cn/chain33/queue"
+	ctypes "github.com/33cn/chain33/types"
 	"time"
 )
 var  NetRatePrefix="level-netrate-"
@@ -25,7 +27,7 @@ const(
 func (n *NetScan) PeersLocation(in *ReqNil, result *interface{}) error {
 	log.Info("PeersLocation")
 	msg := n.client.NewMessage("p2p", EventPeerLocaltionInfo, nil)
-	err := n.client.SendTimeout(msg, true, time.Second*2)
+	err := n.client.SendTimeout(msg, true, time.Second*15)
 	if err != nil {
 		log.Error("PeersLocation", "Error", err.Error())
 		return err
@@ -42,7 +44,7 @@ func (n *NetScan) PeersLocation(in *ReqNil, result *interface{}) error {
 func (n *NetScan)PeersNetRate(in *NetRateReq,result *interface{})error{
 
 	msg := n.client.NewMessage("p2p", EventPeersNetRateInfo, in)
-	err := n.client.SendTimeout(msg, true, time.Second*2)
+	err := n.client.SendTimeout(msg, true, time.Second*10)
 	if err != nil {
 		log.Error("PeersLocation", "Error", err.Error())
 		return err
@@ -51,8 +53,14 @@ func (n *NetScan)PeersNetRate(in *NetRateReq,result *interface{})error{
 	if err != nil {
 		return err
 	}
+	var ok bool
+	*result,ok = resp.GetData().(*PeersNetRateResp)
+	if !ok{
+		resp := resp.GetData().(*ctypes.Reply)
+		return errors.New(string(resp.GetMsg()))
 
-	*result = resp.GetData().(*PeersNetRateResp)
+	}
+
 	return nil
 }
 
