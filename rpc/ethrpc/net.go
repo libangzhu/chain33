@@ -6,8 +6,7 @@ import (
 	rpcclient "github.com/33cn/chain33/rpc/client"
 	"github.com/33cn/chain33/types"
 	ctypes "github.com/33cn/chain33/types"
-	"github.com/33cn/chain33/common"
-	"math/big"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"strconv"
 )
 
@@ -47,8 +46,7 @@ func (n *NetApi) PeerCount() (string, error) {
 	}
 
 	numPeers := len(reply.Peers)
-
-	return 	common.ToHex(big.NewInt(int64(numPeers)).Bytes()), nil
+	return 	hexutil.EncodeUint64(uint64(numPeers)), nil
 }
 
 /**

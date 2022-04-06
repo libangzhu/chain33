@@ -447,7 +447,51 @@ func (e *EthApi)GetTransactionCount(address ,tag string)(string,error){
 	return "0x0",nil
 }
 
+//GetCode
+//method: eth_getCode
+//tag: "latest", "earliest" or "pending"
+func (e *EthApi)GetCode(addr string, tag *string)(string,error){
+	var param rpctypes.Query4Jrpc
+	type EvmQueryReq struct {
+		Address              string `json:"address"`
+	}
 
+	param.Execer = "evm"
+	param.FuncName = "GetCode"
+
+	var payload = EvmQueryReq{Address:addr}
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	param.Payload = jsonData
+	log.Info("getCode", "Query4Jrpc param", param, "payload", string(param.Payload))
+
+	execty := ctypes.LoadExecutorType(param.Execer)
+	if execty == nil {
+		log.Error("getCode", "funcname", param.FuncName, "err", ctypes.ErrNotSupport)
+		return "",ctypes.ErrNotSupport
+	}
+	decodePayload, err := execty.CreateQuery(param.FuncName, param.Payload)
+	if err != nil {
+		log.Error("getCode", "CreateQuery err", err.Error(), "funcName", param.FuncName)
+		return "",err
+	}
+
+	resp,err := e.cli.Query(e.cfg.ExecName(param.Execer), 	param.FuncName , decodePayload)
+	if err != nil {
+		log.Error("getCode", "Query error", err)
+		return "", err
+	}
+
+	log.Debug("getCode", "resp", resp)
+	result, err := execty.QueryToJSON(param.FuncName, resp)
+	if err !=  nil {
+		log.Error("getCode", "QueryToJSON error", err)
+		return "", err
+	}
+	return "0x" + common.Bytes2Hex(result),nil
+}
 
 
 

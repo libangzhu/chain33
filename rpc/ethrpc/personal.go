@@ -81,9 +81,9 @@ response
 }
 ```
  */
-func (p *PersonalApi) NewAccount(lable string, addrID int32) (string, error){
+func (p *PersonalApi) NewAccount(label string, addrID int32) (string, error){
 
-	req := &ctypes.ReqNewAccount{Label:lable, AddressID:addrID}
+	req := &ctypes.ReqNewAccount{Label:label, AddressID:addrID}
 	resp, err := p.cli.ExecWalletFunc("wallet", "NewAccount", req)
 	if err != nil {
 		return "", err

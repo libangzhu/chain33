@@ -22,7 +22,7 @@ const(
 )
 
 var(
-	 log = log15.New("module", "eth_rpc")
+	 log = log15.New("module", "ethrpc")
 )
 
 type RPCServer struct {
