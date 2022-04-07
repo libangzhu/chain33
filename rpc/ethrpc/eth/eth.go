@@ -1,4 +1,4 @@
-package ethrpc
+package eth
 
 import (
 	"encoding/json"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/33cn/chain33/client"
 	"github.com/33cn/chain33/common/crypto"
+	"github.com/33cn/chain33/common/log/log15"
 	"github.com/33cn/chain33/queue"
 	rpcclient "github.com/33cn/chain33/rpc/client"
 	"github.com/33cn/chain33/rpc/ethrpc/types"
@@ -19,12 +20,34 @@ import (
 	"math/rand"
 	"time"
 )
+// mockery -name=Eth
+type Eth interface {
+	GetBalance(address string, tag *string) ( string,  error)
+	ChainId() (string, error)
+	BlockNumber() (string,error)
+	GetBlockByNumber(number string,full bool ) (*types.Block,error)
+	GetBlockByHash(txhash string ,full bool ) (*types.Block,error)
+	GetTransactionReceipt(txhash string)(*types.Receipt,error)
+	GetBlockTransactionCountByNumber(blockNum string )(string,error)
+	Accounts()([]string ,error)
+	Call(msg types.CallMsg,tag *string )(interface{},error)
+	SendRawTransaction(rawData string )(string,error)
+	Sign(address,message string)(string,error)
+	SignTransaction(msg *types.CallMsg)(string,error)
+	Syncing()(interface{},error)
+	Mining()(bool,error)
+	GasPrice()(string,error)
+	EstimateGas(callMsg types.CallMsg)(string,error)
+}
+
 type EthApi struct {
 	cli rpcclient.ChannelClient
 	cfg *ctypes.Chain33Config
 
 }
-
+var(
+	log = log15.New("module", "eth")
+)
 func NewEthApi( cfg *ctypes.Chain33Config,c queue.Client,api client.QueueProtocolAPI) *EthApi {
 	e:=&EthApi{}
 	e.cli.Init(c,api)
@@ -36,16 +59,18 @@ func NewEthApi( cfg *ctypes.Chain33Config,c queue.Client,api client.QueueProtoco
 //GetBalance eth_getBalance  tag:"latest", "earliest" or "pending"
 func (e *EthApi) GetBalance(address string, tag *string) ( string,  error) {
 	var req ctypes.ReqBalance
-	req.AssetSymbol=e.cfg.GetCoinSymbol()
-	req.Execer=e.cfg.GetCoinExec()
+	req.AssetSymbol=e.cli.GetConfig().GetCoinSymbol()
+	req.Execer=e.cli.GetConfig().GetCoinExec()
 	req.Addresses=append(req.GetAddresses(),address)
 	accounts,err:=e.cli.GetBalance(&req)
 	if err!=nil{
 		return "",err
 	}
 	bf:=big.NewInt(accounts[0].GetBalance())
-	return hexutil.EncodeBig(bf),nil
-	//return "0x"+common.Bytes2Hex(bf.Bytes()),nil
+	//bf= bf.Mul(bf,big.NewInt(1e10))
+	result:=hexutil.EncodeBig(bf)
+	log.Info("GetBalance","addr:",address,"balance:",result)
+	return result,nil
 }
 
 //ChainId eth_chainId
@@ -59,11 +84,8 @@ func (e *EthApi) BlockNumber() (string,error) {
 	if err != nil {
 		return "",err
 	}
-
 	bf:=big.NewInt(header.Height)
 	return hexutil.EncodeBig(bf),nil
-
-
 }
 
 //GetBlockByNumber  eth_getBlockByNumber
@@ -88,22 +110,16 @@ func (e*EthApi)GetBlockByNumber(number string,full bool ) (*types.Block,error){
 	var header types.Header
 	fullblock:=details.GetItems()[0]
 	header.Time= hexutil.Uint(fullblock.GetBlock().GetBlockTime()).String()
-	header.Number=hexutil.Uint(fullblock.GetBlock().Height).String() //big.NewInt(fullblock.GetBlock().Height)
+	header.Number=hexutil.Uint(fullblock.GetBlock().GetHeight()).String() //big.NewInt(fullblock.GetBlock().Height)
 	header.TxHash=common.BytesToHash(fullblock.GetBlock().GetHeader(e.cfg).TxHash).Hex()
 	header.Difficulty=hexutil.Uint(fullblock.GetBlock().GetDifficulty()).String() //big.NewInt(int64(fullblock.GetBlock().GetDifficulty()))
-	header.ParentHash=common.BytesToHash(fullblock.GetBlock().ParentHash).Hex()
+	header.ParentHash=common.BytesToHash(fullblock.GetBlock().GetParentHash()).Hex()
 	header.Root=common.BytesToHash(fullblock.GetBlock().GetStateHash()).Hex()
 	header.Coinbase=fullblock.GetBlock().GetTxs()[0].From()
-	//暂不支持ReceiptHash,UncleHash
-	//header.ReceiptHash=
-	//header.UncleHash
-
 	//处理交易
 	//采用BTY 默认的chainID =0如果要采用ETH的默认chainID=1,则为1
 	eipSigner:= etypes.NewEIP155Signer(big.NewInt(int64(e.cfg.GetChainID())))
-
 	var txs []interface{}
-
 	ftxs:=fullblock.GetBlock().GetTxs()
 	for _,itx:=range ftxs{
 		var tx types.Transaction
@@ -117,6 +133,7 @@ func (e*EthApi)GetBlockByNumber(number string,full bool ) (*types.Block,error){
 		tx.To=itx.To
 		amount,err:=itx.Amount()
 		if err!=nil{
+			log.Error("getamount","err",err)
 			return nil,err
 		}
 		tx.Value="0x"+common.Bytes2Hex(big.NewInt(amount).Bytes())
@@ -136,7 +153,6 @@ func (e*EthApi)GetBlockByNumber(number string,full bool ) (*types.Block,error){
 	block.Header=&header
 	block.Transactions=txs
 	block.Hash=common.BytesToHash(fullblock.GetBlock().Hash(e.cfg)).Hex()
-
 	return &block,nil
 }
 
@@ -229,7 +245,7 @@ func (e *EthApi)GetBlockTransactionCountByHash(hash string)(string,error){
 	}
 	txNum:=len(details.GetItems()[0].GetBlock().GetTxs())
 	bn:=big.NewInt(int64(txNum))
-	return "0x"+common.Bytes2Hex(bn.Bytes()),nil
+	return hexutil.EncodeBig(bn),nil
 }
 
 
@@ -297,9 +313,10 @@ func(e *EthApi)SendRawTransaction(rawData string )(string,error){
 		return "",errors.New("wrong data")
 	}
 	var parm ctypes.Transaction
-	//暂按照Chain33交易格式进行解析
+	//按照Chain33交易格式进行解析
 	err := ctypes.Decode(hexData, &parm)
 	if err != nil {
+		log.Error("SendRawTransaction", "param", parm.String(),"err",err.Error())
 		return "",err
 	}
 	log.Debug("SendTransaction", "param", parm.String())
@@ -307,9 +324,7 @@ func(e *EthApi)SendRawTransaction(rawData string )(string,error){
 	if err != nil {
 		return "",err
 	}
-
-	return  "0x"+common.Bytes2Hex(reply.GetMsg()),nil
-
+	return hexutil.Encode(reply.GetMsg()),nil
 }
 
 
@@ -413,14 +428,7 @@ func (e *EthApi)Syncing()(interface{},error){
 	return nil,err
 }
 
-//GasPrice
-//method:eth_gasPrice
-//Parameters: none
-//Returns:Returns the current price per gas in wei.
-func (e *EthApi)GasPrice()(interface{},error){
-	//TODO 支持gasprice的获取
-	return nil,errors.New("no support")
-}
+
 
 //Mining
 //method:eth_mining
@@ -492,6 +500,16 @@ func (e *EthApi)GetCode(addr string, tag *string)(string,error){
 	}
 	return "0x" + common.Bytes2Hex(result),nil
 }
+
+func (e*EthApi)GasPrice()(string,error){
+		return hexutil.EncodeBig(big.NewInt(15e9)),nil
+}
+
+
+func (e*EthApi)EstimateGas(callMsg types.CallMsg)(string,error){
+	return hexutil.EncodeBig(big.NewInt(21000)),nil
+}
+
 
 
 
