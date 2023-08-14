@@ -244,7 +244,7 @@ func (mem *Mempool) evmTxSameNonceCheck(tx *types.Transaction) error {
 				bnfee = bnfee.Div(bnfee, big.NewInt(1e2))
 				if tx.Fee < bnfee.Int64() {
 					err := fmt.Errorf("requires at least 10 percent increase in handling fee,need more:%d", bnfee.Int64()-tx.Fee)
-					mlog.Error("checkTxNonce", "fee err", err, "txfee", tx.Fee, "mempooltx", txs[0].GetTx().Fee)
+					mlog.Error("checkTxNonce", "fee err", err, "txfee", tx.Fee, "mempooltx", txs[0].GetTx().Fee, "from:", tx.From())
 					return err
 				}
 				//移除手续费较低的交易
