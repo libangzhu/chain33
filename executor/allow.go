@@ -87,10 +87,17 @@ func isAllowLocalKey2(cfg *types.Chain33Config, execer []byte, key []byte) error
 		return err
 	}
 	if key[minkeylen-1] != '-' || key[len(types.LocalPrefix)] != '-' {
-		err := errors.Wrapf(types.ErrLocalPrefix,
-			"isAllowLocalKey prefix last char or separator is not '-'. key=%s exec=%s minkeylen=%d title=%s",
-			string(key), string(execer), minkeylen, cfg.GetTitle())
-		return err
+		if string(execer) == "evm" && string(key[len(types.LocalPrefix)+1:len(types.LocalPrefix)+1+len("ticket")]) == "ticket" {
+			if bytes.HasPrefix(key, types.LocalPrefix) {
+				return nil
+			}
+		} else {
+			err := errors.Wrapf(types.ErrLocalPrefix,
+				"isAllowLocalKey prefix last char or separator is not '-'. key=%s exec=%s minkeylen=%d title=%s",
+				string(key), string(execer), minkeylen, cfg.GetTitle())
+			return err
+		}
+
 	}
 	if !bytes.HasPrefix(key, types.LocalPrefix) {
 		err := errors.Wrapf(types.ErrLocalPrefix, "isAllowLocalKey common prefix not match. key=%s exec=%s",
@@ -98,6 +105,7 @@ func isAllowLocalKey2(cfg *types.Chain33Config, execer []byte, key []byte) error
 		return err
 	}
 	if !bytes.HasPrefix(key[len(types.LocalPrefix)+1:], execer) {
+
 		err := errors.Wrapf(types.ErrLocalPrefix, "isAllowLocalKey key prefix not match. key=%s exec=%s",
 			string(key), string(execer))
 		return err
